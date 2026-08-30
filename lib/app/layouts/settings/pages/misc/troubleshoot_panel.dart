@@ -41,6 +41,33 @@ class _TroubleshootPanelState extends OptimizedState<TroubleshootPanel> {
   bool isExportingLogs = false;
   final RxnBool reregisteringIds = RxnBool();
 
+  Future<void> saveOrShareLog(
+    File file, {
+    required String subject,
+    required String mimeType,
+  }) async {
+    try {
+      await fs.saveToDownloads(file, mimeType: mimeType);
+      showSnackbar(
+        "Logs Saved",
+        "Saved ${basename(file.path)} to your Downloads folder.",
+      );
+      if (file.existsSync()) file.deleteSync();
+    } catch (error, trace) {
+      Logger.warn(
+        "Could not save logs to Downloads; opening the share sheet",
+        error: error,
+        trace: trace,
+      );
+      showSnackbar(
+        "Choose Destination",
+        "Downloads was unavailable, so the share sheet was opened instead.",
+      );
+      await Share.file(subject, file.path);
+      if (file.existsSync()) file.deleteSync();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -198,21 +225,10 @@ class _TroubleshootPanelState extends OptimizedState<TroubleshootPanel> {
                             showSnackbar("Please Wait", "Compressing ${logFileCount.value} log file(s)...");
                             String filePath = Logger.compressLogs();
                             final File zippedLogFile = File(filePath);
-
-                            // Copy the file to downloads
-                            String newPath = await fs.saveToDownloads(zippedLogFile);
-
-                            // Delete the original file
-                            zippedLogFile.deleteSync();
-
-                            // Let the user know what happened
-                            showSnackbar(
-                              "Logs Exported",
-                              "Logs have been exported to your downloads folder. Tap here to share it.",
-                              durationMs: 5000,
-                              onTap: (snackbar) async {
-                                Share.file("BlueBubbles Logs", newPath);
-                              },
+                            await saveOrShareLog(
+                              zippedLogFile,
+                              subject: "OpenBubbles Logs",
+                              mimeType: "application/zip",
                             );
                           } catch (ex, stacktrace) {
                             Logger.error("Failed to export logs!", error: ex, trace: stacktrace);
@@ -333,26 +349,25 @@ class _TroubleshootPanelState extends OptimizedState<TroubleshootPanel> {
                         // Copy the file to downloads
 
                         final Directory logDir = Directory(Logger.logDir);
-                        final date = DateTime.now().toIso8601String().split('T').first;
+                        final timestamp = DateTime.now()
+                            .toIso8601String()
+                            .split('.').first
+                            .replaceFirst('T', '-')
+                            .replaceAll(':', '-');
+                        final variant = fs.packageInfo.packageName
+                                .endsWith('.alpha')
+                            ? '-alpha'
+                            : '';
                         final File logFile =
-                            File("${fs.appDocDir.path}/openbubbles-logs-$date.log");
+                            File("${fs.appDocDir.path}/openbubbles$variant-ob-logs-$timestamp.log");
                         if (logFile.existsSync()) logFile.deleteSync();
 
                         await logFile.writeAsBytes(total);
 
-                        String newPath = await fs.saveToDownloads(logFile);
-
-                        // Delete the original file
-                        logFile.deleteSync();
-
-                        // Let the user know what happened
-                        showSnackbar(
-                          "Logs Exported",
-                          "Logs have been exported to your downloads folder. Tap here to share it.",
-                          durationMs: 5000,
-                          onTap: (snackbar) async {
-                            Share.file("OpenBubbles Logs", newPath);
-                          },
+                        await saveOrShareLog(
+                          logFile,
+                          subject: "OpenBubbles Logs",
+                          mimeType: "text/plain",
                         );
                         // Logger.writeLogToFile(total);
                       },

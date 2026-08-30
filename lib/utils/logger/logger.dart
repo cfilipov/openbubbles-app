@@ -191,9 +191,15 @@ class BaseLogger extends GetxService {
 
   String compressLogs() {
     final Directory logDir = Directory(Logger.logDir);
-    final date = DateTime.now().toIso8601String().split('T').first;
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .split('.').first
+        .replaceFirst('T', '-')
+        .replaceAll(':', '-');
+    final variant =
+        fs.packageInfo.packageName.endsWith('.alpha') ? '-alpha' : '';
     final File zippedLogFile =
-        File("${fs.appDocDir.path}/bluebubbles-logs-$date.zip");
+        File("${fs.appDocDir.path}/openbubbles$variant-logs-$timestamp.zip");
     if (zippedLogFile.existsSync()) zippedLogFile.deleteSync();
 
     final List<FileSystemEntity> files = logDir.listSync();

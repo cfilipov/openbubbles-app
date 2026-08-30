@@ -35,6 +35,7 @@ import com.bluebubbles.messaging.services.credentials.OpenAutofillProviderSettin
 import com.bluebubbles.messaging.services.system.OpenConversationNotificationSettingsHandler
 import com.bluebubbles.messaging.services.system.OpenExistingContactRequestHandler
 import com.bluebubbles.messaging.services.system.PushShareTargetsHandler
+import com.bluebubbles.messaging.services.system.SaveFileToDownloadsHandler
 import com.bluebubbles.messaging.services.system.StartGoogleDuoRequestHandler
 import com.bluebubbles.messaging.services.foreground.StartForegroundServiceHandler
 import com.bluebubbles.messaging.services.foreground.StopForegroundServiceHandler
@@ -94,6 +95,7 @@ class MethodCallHandler {
             UpdateNextRestartHandler.tag -> UpdateNextRestartHandler().handleMethodCall(call, result, context)
             BrowserLaunchRequestHandler.tag -> BrowserLaunchRequestHandler().handleMethodCall(call, result, context)
             PushShareTargetsHandler.tag -> PushShareTargetsHandler().handleMethodCall(call, result, context)
+            SaveFileToDownloadsHandler.tag -> SaveFileToDownloadsHandler().handleMethodCall(call, result, context)
             NewContactFormRequestHandler.tag -> NewContactFormRequestHandler().handleMethodCall(call, result, context)
             OpenExistingContactRequestHandler.tag -> OpenExistingContactRequestHandler().handleMethodCall(call, result, context)
             OpenCalendarRequestHandler.tag -> OpenCalendarRequestHandler().handleMethodCall(call, result, context)

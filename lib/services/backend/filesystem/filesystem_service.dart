@@ -156,13 +156,30 @@ class FilesystemService extends GetxService {
       }
     });
 
-  Future<String> saveToDownloads(File file) async {
+  Future<String> saveToDownloads(File file,
+      {String mimeType = 'application/octet-stream'}) async {
     if (kIsWeb) throw "Cannot save file on web!";
 
     final String filename = basename(file.path);
-    final String downloadsDir = await downloadsDirectory;
-    final String newPath = join(downloadsDir, filename);
-    await file.copy(newPath);
-    return newPath;
+    if (kIsDesktop) {
+      final String downloadsDir = await downloadsDirectory;
+      final String newPath = join(downloadsDir, filename);
+      await file.copy(newPath);
+      return newPath;
+    }
+
+    const channel = MethodChannel('com.bluebubbles.messaging');
+    final String? savedUri = await channel.invokeMethod<String>(
+      'save-file-to-downloads',
+      {
+        'filePath': file.path,
+        'fileName': filename,
+        'mimeType': mimeType,
+      },
+    );
+    if (savedUri == null) {
+      throw FileSystemException('Android did not return a saved file URI');
+    }
+    return savedUri;
   }
 }

@@ -57,14 +57,13 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   StreamSubscription? locationSub;
   List<FindMyDevice> devices = [];
   List<FindMyFriend> friends = [];
-  List<FindMyFriend> friendsWithLocation = [];
-  List<FindMyFriend> friendsWithoutLocation = [];
   Map<String, Marker> markers = {};
   Position? location;
   bool? fetching = true;
   bool refreshing = false;
   bool? fetching2 = true;
   bool refreshing2 = false;
+  bool locationRefreshInFlight = false;
   bool canRefresh = false;
   bool isInClique = true;
 
@@ -77,6 +76,59 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
 
   api.FindMyFriendsClientDefaultAnisetteProvider? fmfClient;
   api.FindMyPhoneClientDefaultAnisetteProvider? fmipClient;
+
+  bool hasDeviceLocation(FindMyDevice item) =>
+      item.location?.latitude != null && item.location?.longitude != null;
+
+  bool hasFriendLocation(FindMyFriend item) =>
+      item.latitude != null &&
+      item.longitude != null &&
+      item.latitude != 0 &&
+      item.longitude != 0;
+
+  String deviceKey(FindMyDevice item) =>
+      item.id ??
+      item.deviceDiscoveryId ??
+      item.baUuid ??
+      item.role?["sharingId"]?.toString() ??
+      "${item.isConsideredAccessory}:${item.name ?? item.deviceDisplayName ?? item.modelDisplayName ?? item.rawDeviceModel ?? 'unknown'}";
+
+  String friendKey(FindMyFriend item) =>
+      item.id ??
+      item.handle?.uniqueAddressAndService ??
+      item.title ??
+      "unknown-friend";
+
+  List<T> preserveOrder<T>(
+    List<T> previous,
+    List<T> updated,
+    String Function(T item) keyOf,
+  ) {
+    final updatedByKey = <String, T>{};
+    for (final item in updated) {
+      updatedByKey[keyOf(item)] = item;
+    }
+
+    final ordered = <T>[];
+    for (final item in previous) {
+      final replacement = updatedByKey.remove(keyOf(item));
+      if (replacement != null) ordered.add(replacement);
+    }
+    ordered.addAll(updatedByKey.values);
+    return ordered;
+  }
+
+  String deviceLocationSubtitle(FindMyDevice item) {
+    if (ss.settings.redactedMode.value) return "Location";
+    final address = item.address?.label ?? item.address?.mapItemFullAddress;
+    if (address != null && address.isNotEmpty) return address;
+    if (!hasDeviceLocation(item)) return "No location found";
+    final timestamp = item.location?.timeStamp;
+    if (timestamp != null && timestamp > 0) {
+      return "Last updated ${buildDate(DateTime.fromMillisecondsSinceEpoch(timestamp))}";
+    }
+    return "Location found";
+  }
 
   @override
   void initState() {
@@ -98,10 +150,11 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
         final existingFriend = existingFriendIndex == -1 ? null : friends[existingFriendIndex];
         if (existingFriend == null || existingFriend.status == null || friend.locatingInProgress || LocationStatus.values.indexOf(existingFriend.status!) <= LocationStatus.values.indexOf(friend.status ?? LocationStatus.legacy)) {
           Logger.info("Updating map for ${friend.handle?.address}");
-          friends[existingFriendIndex] = friend;
-
-          friendsWithLocation = friends.where((item) => (item.latitude ?? 0) != 0 && (item.longitude ?? 0) != 0).toList();
-          friendsWithoutLocation = friends.where((item) => (item.latitude ?? 0) == 0 && (item.longitude ?? 0) == 0).toList();
+          if (existingFriendIndex == -1) {
+            friends.add(friend);
+          } else {
+            friends[existingFriendIndex] = friend;
+          }
 
           buildFriendMarker(friend);
           setState(() {});
@@ -125,7 +178,24 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   /// however, the refresh friends endpoint does. The way this was coded assumes that the server
   /// will return the data for both endpoints. A server update will fix this, but for now,
   /// we will "patch" it by only "refreshing" devices when the user manually refreshes the data.
-  void getLocations({bool refreshFriends = true, bool refreshDevices = true}) async {
+  void getLocations({bool refreshFriends = true, bool refreshDevices = true}) {
+    if (locationRefreshInFlight) return;
+    locationRefreshInFlight = true;
+    unawaited(() async {
+      try {
+        await _getLocations(
+          refreshFriends: refreshFriends,
+          refreshDevices: refreshDevices,
+        );
+      } catch (error, trace) {
+        Logger.error("Failed to refresh FindMy data", error: error, trace: trace);
+      } finally {
+        locationRefreshInFlight = false;
+      }
+    }());
+  }
+
+  Future<void> _getLocations({bool refreshFriends = true, bool refreshDevices = true}) async {
     if (!(Platform.isLinux && !kIsWeb)) {
       LocationPermission granted = await Geolocator.checkPermission();
       if (granted == LocationPermission.denied) {
@@ -173,7 +243,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
 
       var following = await api.getFollowing(client: fmfClient!);
     
-      friends = following
+      final updatedFriends = following
           .map((e) => 
             FindMyFriend(
               latitude: e.lastLocation?.latitude,
@@ -192,10 +262,10 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
           .toList()
           .cast<FindMyFriend>();
 
-      friendsWithLocation = friends.where((item) => (item.latitude ?? 0) != 0 && (item.longitude ?? 0) != 0).toList();
-      friendsWithoutLocation = friends.where((item) => (item.latitude ?? 0) == 0 && (item.longitude ?? 0) == 0).toList();
+      friends = preserveOrder(friends, updatedFriends, friendKey);
 
-      for (FindMyFriend e in friendsWithLocation) {
+      markers.removeWhere((key, value) => key.startsWith("friend-"));
+      for (FindMyFriend e in friends.where(hasFriendLocation)) {
         buildFriendMarker(e);
       }
       setState(() {
@@ -217,7 +287,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
           if (friend.latitude != null) {
 
             final marker = markers.values.firstWhere(
-                (e) => (e.key as ValueKey?)?.value == "friend-${friend.handle?.uniqueAddressAndService}");
+                (e) => (e.key as ValueKey?)?.value == "friend-${friendKey(friend)}");
             popupController.showPopupsOnlyFor([marker]);
             mapController.move(LatLng(friend.latitude!, friend.longitude!), 10);
 
@@ -250,7 +320,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
 
       var following = await api.getDevices(client: fmipClient!);
     
-      var devices = following
+      final updatedDevices = following
           .map((e) => 
             FindMyDevice(
               deviceModel: e.deviceModel, 
@@ -375,13 +445,13 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
             locationFinished: true,
             ) : null;
         if (e.productId == -1) {
-          var existingDevice = devices.firstWhereOrNull((d) => d.name == e.naming.name && !d.isConsideredAccessory);
+          var existingDevice = updatedDevices.firstWhereOrNull((d) => d.name == e.naming.name && !d.isConsideredAccessory);
           if (existingDevice == null || e.lastReport == null) continue;
           if (existingDevice.location?.timeStamp != null && api.systemtimeToMillis(time: e.lastReport!.timestamp) < existingDevice.location!.timeStamp!) continue; // report is older
           existingDevice.location = location;
           continue; // this is an iDevice
         }
-        devices.add(FindMyDevice(
+        updatedDevices.add(FindMyDevice(
           deviceModel: e.model, 
           lowPowerMode: false, 
           passcodeLength: null, 
@@ -438,11 +508,13 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
         ));
       }
 
-      this.devices = devices;
+      devices = preserveOrder(devices, updatedDevices, deviceKey);
 
-      for (FindMyDevice e in devices.where((e) => e.location?.latitude != null && e.location?.longitude != null)) {
-          markers[e.id ?? randomString(6)] = Marker(
-            key: ValueKey('device-${e.id ?? randomString(6)}'),
+      markers.removeWhere((key, value) => key.startsWith("device-"));
+      for (FindMyDevice e in devices.where(hasDeviceLocation)) {
+          final key = deviceKey(e);
+          markers['device-$key'] = Marker(
+            key: ValueKey('device-$key'),
             point: LatLng(e.location!.latitude!, e.location!.longitude!),
             width: 30,
             height: 35,
@@ -509,8 +581,9 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   }
 
   void buildFriendMarker(FindMyFriend friend) {
-    markers[friend.handle?.uniqueAddressAndService ?? randomString(6)] = Marker(
-      key: ValueKey('friend-${friend.handle?.uniqueAddressAndService ?? randomString(6)}'),
+    final key = friendKey(friend);
+    markers['friend-$key'] = Marker(
+      key: ValueKey('friend-$key'),
       point: LatLng(friend.latitude!, friend.longitude!),
       width: 35,
       height: 35,
@@ -607,16 +680,10 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
 
   @override
   Widget build(BuildContext context) {
-    final devicesWithLocation = devices
-        .where(
-            (item) => item.location?.latitude != null && !item.isConsideredAccessory)
-        .toList();
-    final itemsWithLocation = devices
-        .where(
-            (item) => (item.location?.latitude != null || item.role?["sharingActive"] == 0) && item.isConsideredAccessory)
-        .toList();
-    final withoutLocation =
-        devices.where((item) => item.location?.latitude == null && item.role?["sharingActive"] != 0).toList();
+    final deviceEntries =
+        devices.where((item) => !item.isConsideredAccessory).toList();
+    final itemEntries =
+        devices.where((item) => item.isConsideredAccessory).toList();
     final devicesBodySlivers = [
       SliverList(
         delegate: SliverChildListDelegate([
@@ -642,9 +709,9 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                 ),
               ),
             ),
-          if (devicesWithLocation.isNotEmpty)
+          if (deviceEntries.isNotEmpty)
             SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Devices"),
-          if (devicesWithLocation.isNotEmpty)
+          if (deviceEntries.isNotEmpty)
             SettingsSection(
               backgroundColor: tileColor,
               children: [
@@ -654,14 +721,16 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     padding: EdgeInsets.zero,
-                    findChildIndexCallback: (key) => findChildIndexByKey(devicesWithLocation, key, (item) => item.address?.uniqueValue),
+                    findChildIndexCallback: (key) =>
+                        findChildIndexByKey(deviceEntries, key, deviceKey),
                     itemBuilder: (context, i) {
-                      final item = devicesWithLocation[i];
+                      final item = deviceEntries[i];
                       return ListTile(
-                        key: ValueKey(item.address?.uniqueValue),
+                        key: ValueKey(deviceKey(item)),
                         mouseCursor: MouseCursor.defer,
                         title: Text(ss.settings.redactedMode.value ? "Device" : (item.name ?? "Unknown Device")),
-                        onTap: item.location?.latitude != null && item.location?.longitude != null
+                        subtitle: Text(deviceLocationSubtitle(item)),
+                        onTap: hasDeviceLocation(item)
                             ? () async {
                                 if (context.isPhone) {
                                   await panelController.close();
@@ -674,7 +743,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                                 mapController.move(LatLng(item.location!.latitude!, item.location!.longitude!), 10);
                               }
                             : null,
-                        trailing: item.location?.latitude != null && item.location?.longitude != null ? ButtonTheme(
+                        trailing: hasDeviceLocation(item) ? ButtonTheme(
                           minWidth: 1,
                           child: TextButton(
                             style: TextButton.styleFrom(
@@ -730,12 +799,12 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                         },
                       );
                     },
-                    itemCount: devicesWithLocation.length,
+                    itemCount: deviceEntries.length,
                   ),
                 ),
               ],
             ),
-          if (itemsWithLocation.isNotEmpty || !isInClique)
+          if (itemEntries.isNotEmpty || !isInClique)
             SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Items"),
           if (!isInClique)
           Obx(() => SettingsSection(
@@ -756,7 +825,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
               ),
             ]
         )),
-          if (itemsWithLocation.isNotEmpty)
+          if (itemEntries.isNotEmpty)
             SettingsSection(
               backgroundColor: tileColor,
               children: [
@@ -766,11 +835,12 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     padding: EdgeInsets.zero,
-                    findChildIndexCallback: (key) => findChildIndexByKey(itemsWithLocation, key, (item) => item.id ?? randomString(6)),
+                    findChildIndexCallback: (key) =>
+                        findChildIndexByKey(itemEntries, key, deviceKey),
                     itemBuilder: (context, i) {
-                      final item = itemsWithLocation[i];
+                      final item = itemEntries[i];
                       var tile = ListTile(
-                        key: ValueKey(item.id ?? randomString(6)),
+                        key: ValueKey(deviceKey(item)),
                         title: Text(ss.settings.redactedMode.value ? "Item" : (item.name ?? "Unknown Item")),
                         subtitle: item.role?["sharingActive"] == 0 ? Column(
                           children: [
@@ -809,8 +879,8 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                             )
                           ],
                         )
-                          : Text(ss.settings.redactedMode.value ? "Location" : (item.address?.label ?? item.address?.mapItemFullAddress ?? "No location found")),
-                        trailing: item.location?.latitude != null && item.location?.longitude != null ? ButtonTheme(
+                          : Text(deviceLocationSubtitle(item)),
+                        trailing: hasDeviceLocation(item) ? ButtonTheme(
                           minWidth: 1,
                           child: TextButton(
                             style: TextButton.styleFrom(
@@ -826,7 +896,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                             ),
                           ),
                         ) : null,
-                        onTap: item.location?.latitude != null && item.location?.longitude != null
+                        onTap: hasDeviceLocation(item)
                             ? () async {
                                 if (context.isPhone) {
                                   await panelController.close();
@@ -883,86 +953,8 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       }
                       return tile;
                     },
-                    itemCount: itemsWithLocation.length,
+                    itemCount: itemEntries.length,
                   ),
-                ),
-              ],
-            ),
-          if (withoutLocation.isNotEmpty)
-            SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Unknown Location"),
-          if (withoutLocation.isNotEmpty)
-            SettingsSection(
-              backgroundColor: tileColor,
-              children: [
-                Material(
-                  color: Colors.transparent,
-                  child: ExpansionTile(
-                      shape: const RoundedRectangleBorder(side: BorderSide(color: Colors.transparent)),
-                      title: const Text("Devices without locations"),
-                      children: withoutLocation
-                          .map((item) {
-                            var tile = ListTile(
-                                title: Text(ss.settings.redactedMode.value ? "Device" : (item.name ?? "Unknown Device")),
-                                subtitle: Text(ss.settings.redactedMode.value ? "Location" : (item.address?.label ?? item.address?.mapItemFullAddress ?? "No location found")),
-                                onTap: item.location?.latitude != null && item.location?.longitude != null
-                                    ? () async {
-                                        if (context.isPhone) {
-                                          await panelController.close();
-                                        }
-                                        await completer.future;
-                                        final marker = markers.values.firstWhere((e) =>
-                                            e.point.latitude == item.location?.latitude &&
-                                            e.point.longitude == item.location?.longitude);
-                                        popupController.showPopupsOnlyFor([marker]);
-                                        mapController.move(
-                                            LatLng(item.location!.latitude!, item.location!.longitude!), 10);
-                                      }
-                                    : null,
-                                onLongPress: () async {
-                                  const encoder = JsonEncoder.withIndent("     ");
-                                  final str = encoder.convert(item.toJson());
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: Text(
-                                        "Raw FindMy Data",
-                                        style: context.theme.textTheme.titleLarge,
-                                      ),
-                                      backgroundColor: context.theme.colorScheme.properSurface,
-                                      content: SizedBox(
-                                        width: ns.width(context) * 3 / 5,
-                                        height: context.height * 1 / 4,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(10.0),
-                                          decoration: BoxDecoration(
-                                              color: context.theme.colorScheme.background,
-                                              borderRadius: const BorderRadius.all(Radius.circular(10))),
-                                          child: SingleChildScrollView(
-                                            child: SelectableText(
-                                              str,
-                                              style: context.theme.textTheme.bodyLarge,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          child: Text("Close",
-                                              style: context.theme.textTheme.bodyLarge!
-                                                  .copyWith(color: context.theme.colorScheme.primary)),
-                                          onPressed: () => Navigator.of(context).pop(),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              );
-                              if (item.role?['sharingId'] != null) {
-                                return wrapDelete(tile, (context) => deleteShared(item));
-                              }
-                              return tile;
-                            })
-                          .toList()),
                 ),
               ],
             ),
@@ -995,9 +987,9 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                 ),
               ),
             ),
-          if (friendsWithLocation.isNotEmpty)
+          if (friends.isNotEmpty)
             SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Friends"),
-          if (friendsWithLocation.isNotEmpty)
+          if (friends.isNotEmpty)
             SettingsSection(
               backgroundColor: tileColor,
               children: [
@@ -1007,15 +999,16 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                     physics: const NeverScrollableScrollPhysics(),
                     shrinkWrap: true,
                     padding: EdgeInsets.zero,
-                    findChildIndexCallback: (key) => findChildIndexByKey(friendsWithLocation, key, (item) => item.handle?.uniqueAddressAndService),
+                    findChildIndexCallback: (key) =>
+                        findChildIndexByKey(friends, key, friendKey),
                     itemBuilder: (context, i) {
-                      final item = friendsWithLocation[i];
+                      final item = friends[i];
                       return ListTile(
-                        key: ValueKey(item.handle?.uniqueAddressAndService),
+                        key: ValueKey(friendKey(item)),
                         leading: ContactAvatarWidget(handle: item.handle),
                         title: Text(item.handle?.displayName ?? item.title ?? "Unknown Friend"),
-                        subtitle: Text(ss.settings.redactedMode.value ? "Location" : ("${item.shortAddress ?? "No location found"}${item.lastUpdated == null || item.status == LocationStatus.live ? "" : "\nLast updated ${buildDate(item.lastUpdated)}"}")),
-                        trailing: item.latitude != null && item.longitude != null ? Row(
+                        subtitle: Text(ss.settings.redactedMode.value ? "Location" : ("${item.shortAddress ?? item.longAddress ?? "No location found"}${item.lastUpdated == null || item.status == LocationStatus.live ? "" : "\nLast updated ${buildDate(item.lastUpdated)}"}")),
+                        trailing: hasFriendLocation(item) ? Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (item.status == LocationStatus.live)
@@ -1041,6 +1034,14 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                           ],
                         ) : null,
                         onTap: () async {
+                          if (!hasFriendLocation(item)) {
+                            await api.selectFriend(
+                              config: pushService.state!.osConfig,
+                              client: fmfClient!,
+                              friend: item.id,
+                            );
+                            return;
+                          }
                           if (context.isPhone) {
                             await panelController.close();
                           }
@@ -1090,71 +1091,8 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                         },
                       );
                     },
-                    itemCount: friendsWithLocation.length,
+                    itemCount: friends.length,
                   ),
-                ),
-              ],
-            ),
-          if (friendsWithoutLocation.isNotEmpty)
-            SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Unknown Location"),
-          if (friendsWithoutLocation.isNotEmpty)
-            SettingsSection(
-              backgroundColor: tileColor,
-              children: [
-                Material(
-                  color: Colors.transparent,
-                  child: ExpansionTile(
-                      shape: const RoundedRectangleBorder(side: BorderSide(color: Colors.transparent)),
-                      title: const Text("Friends without locations"),
-                      children: friendsWithoutLocation
-                          .map((item) => ListTile(
-                                mouseCursor: MouseCursor.defer,
-                                leading: ContactAvatarWidget(handle: item.handle),
-                                title: Text(item.handle?.displayName ?? item.title ?? "Unknown Friend"),
-                                subtitle: Text(ss.settings.redactedMode.value ? "Location" : (item.longAddress ?? "No location found")),
-                                onTap: () async {
-                                  await api.selectFriend(config: pushService.state!.osConfig, client: fmfClient!, friend: item.id);
-                                },
-                                onLongPress: () async {
-                                  const encoder = JsonEncoder.withIndent("     ");
-                                  final str = encoder.convert(item.toJson());
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: Text(
-                                        "Raw FindMy Data",
-                                        style: context.theme.textTheme.titleLarge,
-                                      ),
-                                      backgroundColor: context.theme.colorScheme.properSurface,
-                                      content: SizedBox(
-                                        width: ns.width(context) * 3 / 5,
-                                        height: context.height * 1 / 4,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(10.0),
-                                          decoration: BoxDecoration(
-                                              color: context.theme.colorScheme.background,
-                                              borderRadius: const BorderRadius.all(Radius.circular(10))),
-                                          child: SingleChildScrollView(
-                                            child: SelectableText(
-                                              str,
-                                              style: context.theme.textTheme.bodyLarge,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          child: Text("Close",
-                                              style: context.theme.textTheme.bodyLarge!
-                                                  .copyWith(color: context.theme.colorScheme.primary)),
-                                          onPressed: () => Navigator.of(context).pop(),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ))
-                          .toList()),
                 ),
               ],
             ),
