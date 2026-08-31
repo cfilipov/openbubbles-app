@@ -14,8 +14,14 @@ subprojects {
 subprojects {
     project.evaluationDependsOn(':app')
 }
+subprojects { subproject ->
+    if (subproject.name in ['irondash_engine_context', 'super_native_extensions']) {
+        subproject.afterEvaluate {
+            subproject.apply from: rootProject.file('../rust_builder/cargokit/gradle/plugin.gradle')
+        }
+    }
+}
 
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
-

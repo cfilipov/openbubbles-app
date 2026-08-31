@@ -105,7 +105,9 @@ class CargoKitPlugin implements Plugin<Project> {
     void apply(Project project) {
         def plugin = findFlutterPlugin(project.rootProject);
 
-        project.extensions.create("cargokit", CargoKitExtension)
+        if (project.extensions.findByName("cargokit") == null) {
+            project.extensions.create("cargokit", CargoKitExtension)
+        }
 
         if (plugin == null) {
             print("Flutter plugin not found, CargoKit plugin will not be applied.")
