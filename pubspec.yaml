@@ -93,7 +93,7 @@ dependencies:
   giphy_get: ^3.5.4
   github: ^9.24.0
   google_fonts: ^6.2.1
-  google_ml_kit: ^0.20.0 # mobile only
+  google_mlkit_entity_extraction: ^0.15.1 # mobile only
   google_mlkit_smart_reply: ^0.13.0
   google_sign_in: ^6.2.1
   hand_signature: ^3.0.2

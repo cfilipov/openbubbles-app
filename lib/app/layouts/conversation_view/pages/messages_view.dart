@@ -23,7 +23,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:google_ml_kit/google_ml_kit.dart' hide Message;
+import 'package:google_mlkit_smart_reply/google_mlkit_smart_reply.dart' hide Message;
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:super_drag_and_drop/super_drag_and_drop.dart';
 import 'package:bluebubbles/src/rust/api/api.dart' as api;
@@ -53,7 +53,7 @@ class MessagesViewState extends OptimizedState<MessagesView> {
   RxMap<String, Widget> internalSmartReplies = <String, Widget>{}.obs;
 
   late MessagesService messageService;
-  final smartReply = GoogleMlKit.nlp.smartReply();
+  final smartReply = SmartReply();
   final listKey = GlobalKey<SliverAnimatedListState>();
   final RxBool dragging = false.obs;
   final RxInt numFiles = 0.obs;
