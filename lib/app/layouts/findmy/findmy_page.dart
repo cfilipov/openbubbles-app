@@ -6,6 +6,7 @@ import 'dart:ui';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_battery.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_entity_icon.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/app/layouts/settings/widgets/content/next_button.dart';
@@ -792,6 +793,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       return ListTile(
                         key: ValueKey(deviceKey(item)),
                         mouseCursor: MouseCursor.defer,
+                        leading: FindMyEntityIcon(item: item),
                         title: Text(ss.settings.redactedMode.value ? "Device" : (item.name ?? "Unknown Device")),
                         subtitle: Text(deviceLocationSubtitle(item)),
                         onTap: hasDeviceLocation(item)
@@ -935,6 +937,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       final item = itemEntries[i];
                       var tile = ListTile(
                         key: ValueKey(deviceKey(item)),
+                        leading: FindMyEntityIcon(item: item),
                         title: Text(ss.settings.redactedMode.value ? "Item" : (item.name ?? "Unknown Item")),
                         subtitle: item.role?["sharingActive"] == 0 ? Column(
                           children: [
