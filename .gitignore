@@ -39,6 +39,7 @@ pubspeck.lock
 **/android/key.properties
 **/android/.settings
 **/releases
+/.local/signing/
 
 #objectbox
 .dart_tool/*
