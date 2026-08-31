@@ -131,7 +131,11 @@ class AndroidEnvironment {
 
     final ndkVersionParsed = Version.parse(ndkVersion);
     final rustFlagsKey = 'CARGO_ENCODED_RUSTFLAGS';
-    final rustFlagsValue = _libGccWorkaround(targetTempDir, ndkVersionParsed);
+    final rustFlagsValue = _androidRustFlags(
+      targetTempDir,
+      ndkVersionParsed,
+      use16KbPageSize: target.rust == 'aarch64-linux-android',
+    );
 
     final runRustTool = Platform.isWindows ? 'run_build_tool.cmd' : 'run_build_tool.sh';
 
@@ -165,7 +169,7 @@ class AndroidEnvironment {
   }
 
   // Workaround for libgcc missing in NDK23, inspired by cargo-ndk
-  String _libGccWorkaround(String buildDir, Version ndkVersion) {
+  String _androidRustFlags(String buildDir, Version ndkVersion, {required bool use16KbPageSize}) {
     final workaroundDir = path.join(
       buildDir,
       'cargokit',
@@ -186,6 +190,9 @@ class AndroidEnvironment {
       rustFlags = '$rustFlags\x1f';
     }
     rustFlags = '$rustFlags-L\x1f$workaroundDir';
+    if (use16KbPageSize) {
+      rustFlags = '$rustFlags\x1f-C\x1flink-arg=-Wl,-z,max-page-size=16384';
+    }
     return rustFlags;
   }
 }
