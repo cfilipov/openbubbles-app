@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_battery.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
 import 'package:bluebubbles/app/layouts/settings/widgets/content/next_button.dart';
@@ -129,6 +130,56 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
       return "Last updated ${buildDate(DateTime.fromMillisecondsSinceEpoch(timestamp))}";
     }
     return "Location found";
+  }
+
+  Widget itemLocationSubtitle(BuildContext context, FindMyDevice item) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(deviceLocationSubtitle(item)),
+        if (item.batteryStatus != null)
+          Text(
+            item.batteryStatus!,
+            style: context.theme.textTheme.bodySmall?.copyWith(
+              color: context.theme.colorScheme.error,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget? itemTrailing(BuildContext context, FindMyDevice item) {
+    if (item.batteryStatus == null && !hasDeviceLocation(item)) return null;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (item.batteryStatus != null)
+          Icon(
+            Icons.battery_alert,
+            color: context.theme.colorScheme.error,
+            semanticLabel: item.batteryStatus,
+          ),
+        if (hasDeviceLocation(item))
+          ButtonTheme(
+            minWidth: 1,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                shape: const CircleBorder(),
+                backgroundColor: context.theme.colorScheme.primaryContainer,
+              ),
+              onPressed: () async {
+                await MapsLauncher.launchCoordinates(item.location!.latitude!, item.location!.longitude!);
+              },
+              child: const Icon(
+                Icons.directions,
+                size: 20,
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
@@ -466,7 +517,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
           passcodeLength: null, 
           itemGroup: null, 
           id: e.id, 
-          batteryStatus: null, 
+          batteryStatus: findMyItemBatteryStatus(e.lastReport?.status),
           audioChannels: [], 
           lostModeCapable: true, 
           snd: null, 
@@ -922,23 +973,8 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                             )
                           ],
                         )
-                          : Text(deviceLocationSubtitle(item)),
-                        trailing: hasDeviceLocation(item) ? ButtonTheme(
-                          minWidth: 1,
-                          child: TextButton(
-                            style: TextButton.styleFrom(
-                              shape: const CircleBorder(),
-                              backgroundColor: context.theme.colorScheme.primaryContainer,
-                            ),
-                            onPressed: () async {
-                              await MapsLauncher.launchCoordinates(item.location!.latitude!, item.location!.longitude!);
-                            },
-                            child: const Icon(
-                                Icons.directions,
-                                size: 20
-                            ),
-                          ),
-                        ) : null,
+                          : itemLocationSubtitle(context, item),
+                        trailing: itemTrailing(context, item),
                         onTap: hasDeviceLocation(item)
                             ? () async {
                                 if (context.isPhone) {
@@ -1899,9 +1935,18 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(ss.settings.redactedMode.value ? "Device" : (item.name ?? "Unknown Device"), style: context.theme.textTheme.labelLarge),
+                              Text(ss.settings.redactedMode.value ? (item.isConsideredAccessory ? "Item" : "Device") : (item.name ?? (item.isConsideredAccessory ? "Unknown Item" : "Unknown Device")), style: context.theme.textTheme.labelLarge),
                               Text(ss.settings.redactedMode.value ? "Location" : (item.location?.latitude != null ? "${item.location?.latitude}, ${item.location?.longitude}" : ""),
                                   style: context.theme.textTheme.bodySmall),
+                              if (item.batteryStatus != null)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.battery_alert, size: 14, color: context.theme.colorScheme.error),
+                                    const SizedBox(width: 4),
+                                    Text(item.batteryStatus!, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.colorScheme.error)),
+                                  ],
+                                ),
                             ],
                           ),
                           if (item.location?.latitude != null && item.location?.longitude != null)
