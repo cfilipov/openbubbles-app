@@ -7,3 +7,15 @@ String? findMyItemBatteryStatus(int? reportStatus) {
     _ => null,
   };
 }
+
+String? findMyBatteryWarning({
+  required bool isConsideredAccessory,
+  required String? batteryStatus,
+}) {
+  if (!isConsideredAccessory) return null;
+
+  return switch (batteryStatus?.toLowerCase()) {
+    "low battery" || "very low battery" => batteryStatus,
+    _ => null,
+  };
+}

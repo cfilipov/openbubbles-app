@@ -14,4 +14,47 @@ void main() {
       expect(findMyItemBatteryStatus(0xD0), 'Very Low Battery');
     });
   });
+
+  group('findMyBatteryWarning', () {
+    test('ignores normal device charging states', () {
+      expect(
+        findMyBatteryWarning(
+          isConsideredAccessory: false,
+          batteryStatus: 'NotCharging',
+        ),
+        isNull,
+      );
+      expect(
+        findMyBatteryWarning(
+          isConsideredAccessory: false,
+          batteryStatus: 'Charging',
+        ),
+        isNull,
+      );
+    });
+
+    test('shows only explicit item battery warnings', () {
+      expect(
+        findMyBatteryWarning(
+          isConsideredAccessory: true,
+          batteryStatus: 'NotCharging',
+        ),
+        isNull,
+      );
+      expect(
+        findMyBatteryWarning(
+          isConsideredAccessory: true,
+          batteryStatus: 'Low Battery',
+        ),
+        'Low Battery',
+      );
+      expect(
+        findMyBatteryWarning(
+          isConsideredAccessory: true,
+          batteryStatus: 'Very Low Battery',
+        ),
+        'Very Low Battery',
+      );
+    });
+  });
 }

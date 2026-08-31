@@ -134,14 +134,18 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   }
 
   Widget itemLocationSubtitle(BuildContext context, FindMyDevice item) {
+    final batteryWarning = findMyBatteryWarning(
+      isConsideredAccessory: item.isConsideredAccessory,
+      batteryStatus: item.batteryStatus,
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(deviceLocationSubtitle(item)),
-        if (item.batteryStatus != null)
+        if (batteryWarning != null)
           Text(
-            item.batteryStatus!,
+            batteryWarning,
             style: context.theme.textTheme.bodySmall?.copyWith(
               color: context.theme.colorScheme.error,
             ),
@@ -151,16 +155,20 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   }
 
   Widget? itemTrailing(BuildContext context, FindMyDevice item) {
-    if (item.batteryStatus == null && !hasDeviceLocation(item)) return null;
+    final batteryWarning = findMyBatteryWarning(
+      isConsideredAccessory: item.isConsideredAccessory,
+      batteryStatus: item.batteryStatus,
+    );
+    if (batteryWarning == null && !hasDeviceLocation(item)) return null;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (item.batteryStatus != null)
+        if (batteryWarning != null)
           Icon(
             Icons.battery_alert,
             color: context.theme.colorScheme.error,
-            semanticLabel: item.batteryStatus,
+            semanticLabel: batteryWarning,
           ),
         if (hasDeviceLocation(item))
           ButtonTheme(
@@ -1923,6 +1931,10 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                   final prefix = keyValue.replaceFirst("device-", "");
                   final item = devices.firstWhereOrNull((item) => deviceKey(item) == prefix);
                   if (item == null) return const SizedBox();
+                  final batteryWarning = findMyBatteryWarning(
+                    isConsideredAccessory: item.isConsideredAccessory,
+                    batteryStatus: item.batteryStatus,
+                  );
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 5.0),
                     child: Container(
@@ -1941,13 +1953,13 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                               Text(ss.settings.redactedMode.value ? (item.isConsideredAccessory ? "Item" : "Device") : (item.name ?? (item.isConsideredAccessory ? "Unknown Item" : "Unknown Device")), style: context.theme.textTheme.labelLarge),
                               Text(ss.settings.redactedMode.value ? "Location" : (item.location?.latitude != null ? "${item.location?.latitude}, ${item.location?.longitude}" : ""),
                                   style: context.theme.textTheme.bodySmall),
-                              if (item.batteryStatus != null)
+                              if (batteryWarning != null)
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(Icons.battery_alert, size: 14, color: context.theme.colorScheme.error),
                                     const SizedBox(width: 4),
-                                    Text(item.batteryStatus!, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.colorScheme.error)),
+                                    Text(batteryWarning, style: context.theme.textTheme.bodySmall?.copyWith(color: context.theme.colorScheme.error)),
                                   ],
                                 ),
                             ],
