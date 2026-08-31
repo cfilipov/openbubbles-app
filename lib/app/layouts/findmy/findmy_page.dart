@@ -45,9 +45,10 @@ class FindMyPage extends StatefulWidget {
 }
 
 class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProviderStateMixin {
-  final ScrollController controller1 = ScrollController();
-  final ScrollController controller2 = ScrollController();
-  late final TabController tabController = TabController(vsync: this, length: 2);
+  final ScrollController devicesScrollController = ScrollController();
+  final ScrollController itemsScrollController = ScrollController();
+  final ScrollController friendsScrollController = ScrollController();
+  late final TabController tabController = TabController(vsync: this, length: 3);
   final PanelController panelController = PanelController();
   final RxInt index = 0.obs;
   final PopupController popupController = PopupController();
@@ -133,9 +134,10 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   @override
   void initState() {
     super.initState();
+    tabController.addListener(_syncSelectedTab);
     if (widget.defaultFriend != null) {
-      index.value = 1; // select friends tab
-      tabController.index = 1;
+      index.value = 2; // select friends tab
+      tabController.index = 2;
     }
     getLocations();
 
@@ -170,6 +172,12 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
     //     });
     //   }
     // });
+  }
+
+  void _syncSelectedTab() {
+    if (index.value != tabController.index) {
+      index.value = tabController.index;
+    }
   }
 
   /// Fetches the FindMy data from the server.
@@ -218,8 +226,9 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
               setState(() {
                 buildLocationMarker(event);
               });
-            });
-          }
+    });
+  }
+
           if (!refreshFriends) {
             mapController.move(LatLng(location!.latitude, location!.longitude), 10);
           }
@@ -669,8 +678,12 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   @override
   void dispose() {
     locationSub?.cancel();
+    devicesScrollController.dispose();
+    itemsScrollController.dispose();
+    friendsScrollController.dispose();
     mapController.dispose();
     popupController.dispose();
+    tabController.removeListener(_syncSelectedTab);
     tabController.dispose();
     myTimer?.cancel();
     // TODO
@@ -687,7 +700,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
     final devicesBodySlivers = [
       SliverList(
         delegate: SliverChildListDelegate([
-          if (fetching == null || fetching == true || (fetching == false && devices.isEmpty))
+          if (fetching == null || fetching == true || (fetching == false && deviceEntries.isEmpty))
             Center(
               child: Padding(
                 padding: const EdgeInsets.only(top: 100),
@@ -803,6 +816,37 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                   ),
                 ),
               ],
+            ),
+        ]),
+      ),
+    ];
+
+    final itemsBodySlivers = [
+      SliverList(
+        delegate: SliverChildListDelegate([
+          if (fetching == null ||
+              fetching == true ||
+              (fetching == false && itemEntries.isEmpty && isInClique))
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 100),
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(
+                        fetching == null
+                            ? "Something went wrong!"
+                            : fetching == false
+                                ? "You have no items."
+                                : "Getting FindMy data...",
+                        style: context.theme.textTheme.labelLarge,
+                      ),
+                    ),
+                    if (fetching == true) buildProgressIndicator(context, size: 15),
+                  ],
+                ),
+              ),
             ),
           if (itemEntries.isNotEmpty || !isInClique)
             SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Items"),
@@ -1112,14 +1156,19 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             if (context.isPhone) {
-              return buildNormal(context, devicesBodySlivers, friendsBodySlivers);
+              return buildNormal(context, devicesBodySlivers, itemsBodySlivers, friendsBodySlivers);
             }
-            return buildTabletLayout(context, devicesBodySlivers, friendsBodySlivers);
+            return buildTabletLayout(context, devicesBodySlivers, itemsBodySlivers, friendsBodySlivers);
           },
         ));
   }
 
-  Widget buildTabletLayout(BuildContext context, List<SliverList> devicesBodySlivers, List<SliverList> friendsBodySlivers) {
+  Widget buildTabletLayout(
+    BuildContext context,
+    List<SliverList> devicesBodySlivers,
+    List<SliverList> itemsBodySlivers,
+    List<SliverList> friendsBodySlivers,
+  ) {
     return Obx(
       () => Scaffold(
         backgroundColor: context.theme.colorScheme.background.themeOpacity(context),
@@ -1216,11 +1265,12 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                         controller: tabController,
                         children: [
                           ScrollbarWrapper(
-                            controller: controller1,
+                            controller: devicesScrollController,
                             child: CustomScrollView(
-                              controller: controller1,
+                              key: const PageStorageKey("find-my-devices"),
+                              controller: devicesScrollController,
                               slivers: [
-                                if (samsung) buildSamsungAppBar(context, "FindMy Devices"),
+                                if (samsung) buildSamsungAppBar(context, "Find My Devices"),
                                 if (ss.settings.skin.value != Skins.Samsung) ...devicesBodySlivers,
                                 if (ss.settings.skin.value == Skins.Samsung)
                                   SliverToBoxAdapter(
@@ -1241,11 +1291,38 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                             ),
                           ),
                           ScrollbarWrapper(
-                            controller: controller2,
+                            controller: itemsScrollController,
                             child: CustomScrollView(
-                              controller: controller2,
+                              key: const PageStorageKey("find-my-items"),
+                              controller: itemsScrollController,
                               slivers: [
-                                if (samsung) buildSamsungAppBar(context, "FindMy Friends"),
+                                if (samsung) buildSamsungAppBar(context, "Find My Items"),
+                                if (!samsung) ...itemsBodySlivers,
+                                if (samsung)
+                                  SliverToBoxAdapter(
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                          minHeight: context.height -
+                                              50 -
+                                              context.mediaQueryPadding.top -
+                                              context.mediaQueryViewPadding.top),
+                                      child: CustomScrollView(
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        shrinkWrap: true,
+                                        slivers: itemsBodySlivers,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          ScrollbarWrapper(
+                            controller: friendsScrollController,
+                            child: CustomScrollView(
+                              key: const PageStorageKey("find-my-friends"),
+                              controller: friendsScrollController,
+                              slivers: [
+                                if (samsung) buildSamsungAppBar(context, "Find My Friends"),
                                 if (!samsung) ...friendsBodySlivers,
                                 if (samsung)
                                   SliverToBoxAdapter(
@@ -1291,6 +1368,16 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
             children: [
               Icon(iOS ? CupertinoIcons.device_desktop : Icons.devices),
               const Text("Devices"),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(iOS ? CupertinoIcons.tag : Icons.label_outline),
+              const Text("Items"),
             ],
           ),
         ),
@@ -1346,7 +1433,12 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
     );
   }
 
-  Widget buildNormal(BuildContext context, List<SliverList> devicesBodySlivers, List<SliverList> friendsBodySlivers) {
+  Widget buildNormal(
+    BuildContext context,
+    List<SliverList> devicesBodySlivers,
+    List<SliverList> itemsBodySlivers,
+    List<SliverList> friendsBodySlivers,
+  ) {
     return Obx(
       () => Scaffold(
         backgroundColor: material ? tileColor : headerColor,
@@ -1392,24 +1484,27 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       if (ss.settings.skin.value != Skins.Samsung || kIsWeb || kIsDesktop) return false;
                       final scrollDistance = context.height / 3 - 57;
 
-                      if (controller1.offset > 0 && controller1.offset < scrollDistance) {
-                        final double snapOffset = controller1.offset / scrollDistance > 0.5 ? scrollDistance : 0;
+                      if (devicesScrollController.offset > 0 &&
+                          devicesScrollController.offset < scrollDistance) {
+                        final double snapOffset =
+                            devicesScrollController.offset / scrollDistance > 0.5 ? scrollDistance : 0;
 
-                        Future.microtask(() => controller1.animateTo(snapOffset,
+                        Future.microtask(() => devicesScrollController.animateTo(snapOffset,
                             duration: const Duration(milliseconds: 200), curve: Curves.linear));
                       }
                       return false;
                     },
                     child: ScrollbarWrapper(
-                      controller: controller1,
+                      controller: devicesScrollController,
                       child: Obx(
                         () => CustomScrollView(
-                          controller: controller1,
+                          key: const PageStorageKey("find-my-devices"),
+                          controller: devicesScrollController,
                           physics: (kIsDesktop || kIsWeb)
                               ? const NeverScrollableScrollPhysics()
                               : ThemeSwitcher.getScrollPhysics(),
                           slivers: <Widget>[
-                            if (samsung) buildSamsungAppBar(context, "FindMy Devices"),
+                            if (samsung) buildSamsungAppBar(context, "Find My Devices"),
                             if (ss.settings.skin.value != Skins.Samsung) ...devicesBodySlivers,
                             if (ss.settings.skin.value == Skins.Samsung)
                               SliverToBoxAdapter(
@@ -1436,24 +1531,74 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       if (ss.settings.skin.value != Skins.Samsung || kIsWeb || kIsDesktop) return false;
                       final scrollDistance = context.height / 3 - 57;
 
-                      if (controller2.offset > 0 && controller2.offset < scrollDistance) {
-                        final double snapOffset = controller2.offset / scrollDistance > 0.5 ? scrollDistance : 0;
+                      if (itemsScrollController.offset > 0 &&
+                          itemsScrollController.offset < scrollDistance) {
+                        final double snapOffset =
+                            itemsScrollController.offset / scrollDistance > 0.5 ? scrollDistance : 0;
 
-                        Future.microtask(() => controller2.animateTo(snapOffset,
+                        Future.microtask(() => itemsScrollController.animateTo(snapOffset,
                             duration: const Duration(milliseconds: 200), curve: Curves.linear));
                       }
                       return false;
                     },
                     child: ScrollbarWrapper(
-                      controller: controller2,
+                      controller: itemsScrollController,
                       child: Obx(
                         () => CustomScrollView(
-                          controller: controller2,
+                          key: const PageStorageKey("find-my-items"),
+                          controller: itemsScrollController,
                           physics: (kIsDesktop || kIsWeb)
                               ? const NeverScrollableScrollPhysics()
                               : ThemeSwitcher.getScrollPhysics(),
                           slivers: <Widget>[
-                            if (samsung) buildSamsungAppBar(context, "FindMy Friends"),
+                            if (samsung) buildSamsungAppBar(context, "Find My Items"),
+                            if (ss.settings.skin.value != Skins.Samsung) ...itemsBodySlivers,
+                            if (ss.settings.skin.value == Skins.Samsung)
+                              SliverToBoxAdapter(
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                      minHeight: context.height -
+                                          50 -
+                                          context.mediaQueryPadding.top -
+                                          context.mediaQueryViewPadding.top),
+                                  child: CustomScrollView(
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    shrinkWrap: true,
+                                    slivers: itemsBodySlivers,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  NotificationListener<ScrollEndNotification>(
+                    onNotification: (_) {
+                      if (ss.settings.skin.value != Skins.Samsung || kIsWeb || kIsDesktop) return false;
+                      final scrollDistance = context.height / 3 - 57;
+
+                      if (friendsScrollController.offset > 0 &&
+                          friendsScrollController.offset < scrollDistance) {
+                        final double snapOffset =
+                            friendsScrollController.offset / scrollDistance > 0.5 ? scrollDistance : 0;
+
+                        Future.microtask(() => friendsScrollController.animateTo(snapOffset,
+                            duration: const Duration(milliseconds: 200), curve: Curves.linear));
+                      }
+                      return false;
+                    },
+                    child: ScrollbarWrapper(
+                      controller: friendsScrollController,
+                      child: Obx(
+                        () => CustomScrollView(
+                          key: const PageStorageKey("find-my-friends"),
+                          controller: friendsScrollController,
+                          physics: (kIsDesktop || kIsWeb)
+                              ? const NeverScrollableScrollPhysics()
+                              : ThemeSwitcher.getScrollPhysics(),
+                          slivers: <Widget>[
+                            if (samsung) buildSamsungAppBar(context, "Find My Friends"),
                             if (ss.settings.skin.value != Skins.Samsung) ...friendsBodySlivers,
                             if (ss.settings.skin.value == Skins.Samsung)
                               SliverToBoxAdapter(
@@ -1551,14 +1696,23 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
               label: "DEVICES",
             ),
             NavigationDestination(
+              icon: Icon(iOS ? CupertinoIcons.tag : Icons.label_outline),
+              label: "ITEMS",
+            ),
+            NavigationDestination(
               icon: Icon(iOS ? CupertinoIcons.person_2 : Icons.person),
               label: "FRIENDS",
             ),
           ],
           onDestinationSelected: (page) {
+            final selectedCurrentTab = index.value == page;
             index.value = page;
             tabController.animateTo(page);
-            if (index.value == page && panelController.isPanelOpen) {
+
+            // Switching tabs should not change the panel's expansion state.
+            // Tapping the selected tab still toggles the panel.
+            if (!selectedCurrentTab) return;
+            if (panelController.isPanelOpen) {
               panelController.close();
             } else {
               panelController.open();
