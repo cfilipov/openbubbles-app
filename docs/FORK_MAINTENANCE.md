@@ -13,7 +13,7 @@ The application upstream uses the `rustpush` branch rather than `main` or
 | Component | Upstream | Maintained ref | Recorded state on 2026-09-05 |
 | --- | --- | --- | --- |
 | Application | [`OpenBubbles/openbubbles-app`](https://github.com/OpenBubbles/openbubbles-app), branch `rustpush` | `cfilipov/test-pr231` | Upstream tip `eed1b6332`; PR 231 head `ae273e9e6`; last functional fork patch `90dcab0d7` |
-| RustPush | [`OpenBubbles/rustpush`](https://github.com/OpenBubbles/rustpush), branch `master` | `cfilipov/findmy-location-lookup` | Upstream tip `f35c4ee0`; fork point `a7fab473`; fork tip `70c94acb` |
+| RustPush | [`OpenBubbles/rustpush`](https://github.com/OpenBubbles/rustpush), branch `master` | [`cfilipov/rustpush`](https://github.com/cfilipov/rustpush), branch `cfilipov/findmy-location-lookup` | Upstream tip `f35c4ee0`; fork point `a7fab473`; fork tip `70c94acb` |
 | Telephony | [`OpenBubbles/telephony_plus`](https://github.com/OpenBubbles/telephony_plus), branch `main` | No fork changes | `5210e940` |
 
 The installed Android test app uses the Alpha application ID
@@ -82,18 +82,15 @@ application work.
 | `2babec7` | Applied | Looks up fresh Find My accessory reports so nearby items can receive current locations. |
 | `70c94ac` | Applied | Ignores unknown report keys instead of failing the entire Find My refresh. |
 
-### Submodule publication requirement
+### Submodule publication
 
-The `rustpush` checkout currently declares only the OpenBubbles upstream remote,
-and `cfilipov/rustpush` has not been created. Consequently, a fresh clone of the
-application fork cannot fetch `70c94acb` from the URL in `.gitmodules`.
+The RustPush divergence is published to
+[`cfilipov/rustpush`](https://github.com/cfilipov/rustpush) on branch
+`cfilipov/findmy-location-lookup`. The application `.gitmodules` entry points to
+that fork, so a recursive clone can resolve the recorded commit `70c94acb`.
 
-Before relying on this fork from another machine:
-
-1. Create a `cfilipov/rustpush` fork.
-2. Push `cfilipov/findmy-location-lookup` and all commits through `70c94acb`.
-3. Change the application `.gitmodules` RustPush URL to the fork.
-4. Synchronize submodule metadata and verify a clean recursive clone.
+In the maintained checkout, use `origin` for `cfilipov/rustpush` and `upstream`
+for `OpenBubbles/rustpush`. Fetch both before integrating new upstream work.
 
 Keep RustPush changes in focused commits and advance the parent repository's
 submodule pointer in a separate application commit when practical.
