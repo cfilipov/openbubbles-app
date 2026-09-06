@@ -42,3 +42,7 @@ The repository-specific development and diagnostic notes are in
 [`docs/DIAGNOSTICS.md`](docs/DIAGNOSTICS.md). They document the Android build
 matrix, the iMessage/relay versus SMS/MMS/RCS boundary, safe log collection,
 and the current known limitations.
+
+This fork's imported pull requests, local patches, submodule divergence, and
+planned fixes are recorded in
+[`docs/FORK_MAINTENANCE.md`](docs/FORK_MAINTENANCE.md).
