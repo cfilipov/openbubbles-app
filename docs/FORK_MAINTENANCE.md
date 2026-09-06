@@ -13,7 +13,7 @@ The application upstream uses the `rustpush` branch rather than `main` or
 | Component | Upstream | Maintained ref | Recorded state on 2026-09-05 |
 | --- | --- | --- | --- |
 | Application | [`OpenBubbles/openbubbles-app`](https://github.com/OpenBubbles/openbubbles-app), branch `rustpush` | `cfilipov/test-pr231` | Upstream tip `eed1b6332`; PR 231 head `ae273e9e6`; last functional fork patch `90dcab0d7` |
-| RustPush | [`OpenBubbles/rustpush`](https://github.com/OpenBubbles/rustpush), branch `master` | [`cfilipov/rustpush`](https://github.com/cfilipov/rustpush), branch `cfilipov/findmy-location-lookup` | Upstream tip `f35c4ee0`; fork point `a7fab473`; fork tip `70c94acb` |
+| RustPush | [`OpenBubbles/rustpush`](https://github.com/OpenBubbles/rustpush), branch `master` | [`cfilipov/rustpush`](https://github.com/cfilipov/rustpush), branch `cfilipov/findmy-location-lookup` | Upstream tip `f35c4ee0`; fork point `a7fab473`; fork tip `2491bd34` |
 | Telephony | [`OpenBubbles/telephony_plus`](https://github.com/OpenBubbles/telephony_plus), branch `main` | No fork changes | `5210e940` |
 
 The installed Android test app uses the Alpha application ID
@@ -62,7 +62,7 @@ None of the fork-owned changes in this section has been proposed upstream.
 
 ## Fork-owned RustPush work
 
-The application currently records RustPush commit `70c94acb`.
+The application currently records RustPush commit `2491bd34`.
 
 ### Changes imported with PR 231
 
@@ -82,12 +82,25 @@ application work.
 | `2babec7` | Applied | Looks up fresh Find My accessory reports so nearby items can receive current locations. |
 | `70c94ac` | Applied | Ignores unknown report keys instead of failing the entire Find My refresh. |
 
+### Asynchronous iMessage payloads
+
+| Commit | State | Purpose |
+| --- | --- | --- |
+| `0936a83` | Testing | Parses the original IDS command and validates the MMCS descriptor carried by command 104. |
+| `2491bd3` | Testing | Downloads command-104 data without attachment decryption, restores the original command, and passes the result through normal message decryption and parsing. |
+
+This is the receive path used by native iMessage audio messages. Malformed
+descriptors and failed downloads now return an error without falsely certifying
+delivery, preserving the opportunity for Apple to retry the payload. Synthetic
+parser tests pass; acceptance remains pending on a physical-device audio-message
+test.
+
 ### Submodule publication
 
 The RustPush divergence is published to
 [`cfilipov/rustpush`](https://github.com/cfilipov/rustpush) on branch
 `cfilipov/findmy-location-lookup`. The application `.gitmodules` entry points to
-that fork, so a recursive clone can resolve the recorded commit `70c94acb`.
+that fork, so a recursive clone can resolve the recorded commit `2491bd34`.
 
 In the maintained checkout, use `origin` for `cfilipov/rustpush` and `upstream`
 for `OpenBubbles/rustpush`. Fetch both before integrating new upstream work.
@@ -95,14 +108,13 @@ for `OpenBubbles/rustpush`. Fetch both before integrating new upstream work.
 Keep RustPush changes in focused commits and advance the parent repository's
 submodule pointer in a separate application commit when practical.
 
-## Planned work
+## Protocol investigation notes
 
 ### Receive asynchronous iMessage payloads, including audio messages
 
-- State: diagnosed; not implemented.
 - Reproduction: a native audio message sent at 17:21 Pacific on 2026-09-05 was
   received and decrypted by OpenBubbles but silently discarded.
-- Cause: RustPush advertises `supports-audio-messaging-v2` but does not process
+- Cause: RustPush advertised `supports-audio-messaging-v2` but did not process
   IDS command `104`. The decrypted command-104 body is an MMCS descriptor with
   `mmcs-url`, `mmcs-owner`, and `mmcs-signature-hex`; `oC` contains the original
   command (`100` in the captured incident).
@@ -111,13 +123,8 @@ submodule pointer in a separate application commit when practical.
 - Implementation reference: Beeper's public iMessage implementation labels
   command 104 as `MessageTypeIMessageAsync`, downloads the MMCS payload without
   an attachment decryption key, restores `oC`, and reprocesses the downloaded
-  IDS payload. Its AGPL source is protocol reference material only; write an
-  independent Rust implementation for this SSPL repository.
-- Intended commit split:
-  1. Parse the original command and asynchronous MMCS descriptor.
-  2. Download and reprocess command-104 payloads.
-  3. Add fixtures/tests and log unsupported or failed payloads instead of
-     silently acknowledging and discarding them.
+  IDS payload. Its AGPL source was used only as protocol reference material; the
+  Rust implementation in this SSPL repository was written independently.
 
 References:
 
