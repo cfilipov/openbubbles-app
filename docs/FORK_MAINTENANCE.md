@@ -59,7 +59,8 @@ These changes begin after the PR 231 head at `ae273e9e6`.
 | Flutter 3.24 native drag compatibility | `26f64a120` | Applied | Restores the required native drag plugins after the dependency changes and fixes the resulting black startup screen. |
 | Local signing hygiene | `90dcab0d7` | Applied | Keeps the reusable Alpha signing configuration out of Git. |
 | Local device-backup hygiene | `0ca83f8a5` | Applied | Keeps APK, settings, and conversation backups under `.local/backups/` out of Git. |
-| Relay-reminder timezone initialization | `7cd0811b8` | Testing | Initializes timezone data before startup services and again at notification scheduling boundaries so relay reminders cannot race startup. |
+| Notification timezone initialization | `7cd0811b8` | Testing | Initializes timezone data before startup services and at notification scheduling boundaries so time-based notifications cannot race startup. |
+| Failure-only relay notifications | `5ebbb25f8` | Testing | Removes the unconditional pre-renewal relay reminder and clears reminders left by older builds. Actual registration failures and Apple logouts still notify. |
 | Audio-message seek controls | `c5176bd02` | Testing | Replaces the unreliable mobile waveform with a stable slider and elapsed/total playback time. |
 | Android backup and log sharing | `38364d1fb` | Testing | Saves settings backups through MediaStore, restores one-tap log sharing, and shortens backup snackbars so their Share actions remain visible. |
 
