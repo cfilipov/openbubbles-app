@@ -45,6 +45,9 @@ class _AudioPlayerState extends OptimizedState<AudioPlayer>
 
   PlayerController? controller;
   StreamSubscription<PlayerState>? _playerStateSubscription;
+  StreamSubscription<int>? _currentDurationSubscription;
+  StreamSubscription<void>? _completionSubscription;
+  int _currentDuration = 0;
   late final animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -66,6 +69,8 @@ class _AudioPlayerState extends OptimizedState<AudioPlayer>
       cvController?.audioPlayers.remove(guid);
     }
     _playerStateSubscription?.cancel();
+    _currentDurationSubscription?.cancel();
+    _completionSubscription?.cancel();
     controller?.dispose();
     controller = null;
     animController.dispose();
@@ -89,6 +94,20 @@ class _AudioPlayerState extends OptimizedState<AudioPlayer>
         }
         setState(() {});
       });
+      _currentDurationSubscription =
+          controller!.onCurrentDurationChanged.listen((duration) {
+        if (!mounted) return;
+        final maxDuration = controller?.maxDuration ?? 0;
+        _currentDuration = maxDuration > 0
+            ? duration.clamp(0, maxDuration).toInt()
+            : (duration < 0 ? 0 : duration);
+        setState(() {});
+      });
+      _completionSubscription = controller!.onCompletion.listen((_) {
+        if (!mounted) return;
+        _currentDuration = controller?.maxDuration ?? 0;
+        setState(() {});
+      });
       await controller!.preparePlayer(path: file.path!);
       if (!mounted) {
         await _playerStateSubscription?.cancel();
@@ -106,6 +125,11 @@ class _AudioPlayerState extends OptimizedState<AudioPlayer>
 
   @override
   Widget build(BuildContext context) {
+    final maxDuration = controller?.maxDuration ?? 0;
+    final currentDuration = maxDuration > 0
+        ? _currentDuration.clamp(0, maxDuration).toInt()
+        : 0;
+
     return Padding(
         padding: const EdgeInsets.all(5),
         child: Column(
@@ -197,31 +221,43 @@ class _AudioPlayerState extends OptimizedState<AudioPlayer>
                       visualDensity: VisualDensity.compact,
                     ),
                   ),
-                  (controller?.maxDuration ?? 0) == 0
-                      ? SizedBox(width: ns.width(context) * 0.25)
-                      : AudioFileWaveforms(
-                          size: Size(ns.width(context) * 0.20, 40),
-                          playerController: controller!,
-                          padding: EdgeInsets.zero,
-                          playerWaveStyle: PlayerWaveStyle(
-                              fixedWaveColor: context
-                                  .theme.colorScheme.properSurface
-                                  .oppositeLightenOrDarken(20),
-                              liveWaveColor:
-                                  context.theme.colorScheme.properOnSurface,
-                              waveCap: StrokeCap.square,
-                              waveThickness: 2,
-                              seekLineThickness: 2,
-                              showSeekLine: false),
-                        ),
-                  const SizedBox(width: 5),
                   Expanded(
-                    child: Center(
-                      heightFactor: 1,
+                    flex: 3,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        activeTrackColor: context.theme.colorScheme.properOnSurface,
+                        inactiveTrackColor: context.theme.colorScheme.properSurface.oppositeLightenOrDarken(20),
+                        thumbColor: context.theme.colorScheme.properOnSurface,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                      ),
+                      child: Slider(
+                        value: currentDuration.toDouble(),
+                        min: 0,
+                        max: maxDuration > 0 ? maxDuration.toDouble() : 1,
+                        onChanged: controller != null && maxDuration > 0
+                            ? (value) {
+                                _currentDuration = value.round();
+                                setState(() {});
+                                unawaited(controller!.seekTo(_currentDuration));
+                              }
+                            : null,
+                        semanticFormatterCallback: (value) => prettyDuration(
+                            Duration(milliseconds: value.round())),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    flex: 2,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
                       child: Text(
-                          prettyDuration(Duration(
-                              milliseconds: controller?.maxDuration ?? 0)),
-                          style: context.theme.textTheme.labelLarge!),
+                        "${prettyDuration(Duration(milliseconds: currentDuration))} / ${prettyDuration(Duration(milliseconds: maxDuration > 0 ? maxDuration : 0))}",
+                        maxLines: 1,
+                        style: context.theme.textTheme.labelLarge!,
+                      ),
                     ),
                   ),
                 ],
