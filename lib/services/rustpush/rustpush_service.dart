@@ -51,7 +51,6 @@ import 'package:mixpanel_flutter/mixpanel_flutter.dart';
 import 'package:bluebubbles/helpers/backend/startup_tasks.dart';
 import 'package:flutter_isolate/flutter_isolate.dart';
 import 'package:google_sign_in_all_platforms/google_sign_in_all_platforms.dart';
-import 'package:synchronized/synchronized.dart';
 
 var uuid = const Uuid();
 RustPushService pushService =
@@ -1375,7 +1374,6 @@ class RustPushService extends GetxService {
   final Rxn<DateTime> relayLastSuccess = Rxn<DateTime>();
   Future<bool?>? _relayHealthInFlight;
   String? _relayHealthFingerprint;
-  final Lock _relayReminderLock = Lock();
 
   Future<api.DeviceInfo?> getUserManagedIPhoneRelayDevice(
       {api.SharedPushState? fromState}) async {
@@ -1553,47 +1551,6 @@ class RustPushService extends GetxService {
     } finally {
       relayHealthChecking.value = false;
     }
-  }
-
-  Future<void> scheduleRelayHealthReminder(
-      int secondsUntilRenewal) async {
-    await _relayReminderLock.synchronized(() async {
-      await notif.cancelRelayCheckReminder();
-      final currentState = state;
-      if (currentState == null) {
-        return;
-      }
-      try {
-        if (await getUserManagedIPhoneRelayDevice(
-                fromState: currentState) ==
-            null) {
-          return;
-        }
-        if ((await api.getMyPhoneHandles(
-                state: currentState.client))
-            .isEmpty) {
-          return;
-        }
-      } catch (e, s) {
-        Logger.warn("Failed to schedule iPhone relay reminder",
-            error: e, trace: s);
-        return;
-      }
-      if (!identical(state, currentState)) {
-        return;
-      }
-
-      const warningLeadTime = Duration(minutes: 15);
-      final delaySeconds =
-          max(10, secondsUntilRenewal - warningLeadTime.inSeconds);
-      await notif.scheduleRelayCheckReminder(
-          DateTime.now().add(Duration(seconds: delaySeconds)));
-    });
-  }
-
-  Future<void> cancelRelayHealthReminder() async {
-    await _relayReminderLock.synchronized(
-        () => notif.cancelRelayCheckReminder());
   }
 
   Map<String, api.Attachment> attachments = {};
@@ -3763,17 +3720,12 @@ class RustPushService extends GetxService {
       var state = push.field0;
       if (state is api.RegisterState_Registered) {
         notifiedFailed = false;
-        unawaited(scheduleRelayHealthReminder(state.nextS));
         if (ss.settings.deviceIsHosted.value) {
           mixpanel?.track("hosted-register-success");
         }
         handleRegistered();
       }
-      if (state is api.RegisterState_Registering) {
-        unawaited(cancelRelayHealthReminder());
-      }
       if (state is api.RegisterState_Failed && !notifiedFailed) {
-        unawaited(cancelRelayHealthReminder());
         if (ss.settings.deviceIsHosted.value) {
           mixpanel?.track("hosted-register-failure");
         }
@@ -5321,18 +5273,9 @@ class RustPushService extends GetxService {
           error: e, trace: s);
       await clearRelayHealthState();
     }
-    if (state != null) {
-      try {
-        final registrationState =
-            await api.getRegstate(state: state!.client);
-        if (registrationState is api.RegisterState_Registered) {
-          await scheduleRelayHealthReminder(registrationState.nextS);
-        }
-      } catch (e, s) {
-        Logger.warn("Failed to schedule iPhone relay health check",
-            error: e, trace: s);
-      }
-    }
+    // Older builds scheduled an unconditional pre-renewal reminder. Clear it
+    // on startup; actual registration failures still produce error alerts.
+    await notif.cancelRelayCheckReminder();
     Timer(const Duration(seconds: 2), checkIncident);
     // pre-cache next FT link
     if (pushService.state != null) {
@@ -5424,7 +5367,6 @@ class RustPushService extends GetxService {
     if (relayHealthCheck != null) {
       await relayHealthCheck;
     }
-    await cancelRelayHealthReminder();
     if (hw || logout) {
       await clearRelayHealthState();
     }
@@ -5514,7 +5456,6 @@ class RustPushService extends GetxService {
     }
     _profileRetryTimers.clear();
     _profileRetryAttempts.clear();
-    unawaited(cancelRelayHealthReminder());
     if (state != null) disposeState(state!, true, false);
     super.onClose();
   }
