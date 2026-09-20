@@ -28,7 +28,6 @@ import 'package:flutter/scheduler.dart' hide Priority;
 import 'package:flutter/services.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:get/get.dart';
 import 'package:google_mlkit_entity_extraction/google_mlkit_entity_extraction.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -40,8 +39,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:secure_application/secure_application.dart';
 import 'package:system_tray/system_tray.dart' as st;
-import 'package:timezone/data/latest.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
 import 'package:tray_manager/tray_manager.dart';
 import 'package:universal_html/html.dart' as html;
 import 'package:universal_io/io.dart';
@@ -87,6 +84,10 @@ Future<Null> initApp(bool bubble, List<String> arguments) async {
   runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      if (!kIsWeb && !kIsDesktop) {
+        await initializeLocalTimeZone();
+      }
 
       await StartupTasks.initStartupServices(isBubble: bubble);
 
@@ -137,12 +138,6 @@ Future<Null> initApp(bool bubble, List<String> arguments) async {
 
         /* ----- ANDROID SPECIFIC INITIALIZATION ----- */
         if (!kIsWeb && !kIsDesktop) {
-          /* ----- TIME ZONE INITIALIZATION ----- */
-          tz.initializeTimeZones();
-          try {
-            tz.setLocalLocation(tz.getLocation(await FlutterTimezone.getLocalTimezone()));
-          } catch (_) {}
-
           /* ----- MLKIT INITIALIZATION ----- */
           if (!await EntityExtractorModelManager().isModelDownloaded(EntityExtractorLanguage.english.name)) {
             EntityExtractorModelManager().downloadModel(EntityExtractorLanguage.english.name, isWifiRequired: false);

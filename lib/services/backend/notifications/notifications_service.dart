@@ -190,6 +190,7 @@ class NotificationsService extends GetxService {
   }
 
   Future<void> createReminder(Chat? chat, Message? message, DateTime time, {String? chatTitle, String? messageText}) async {
+    await initializeLocalTimeZone();
     await flnp.zonedSchedule(
       Random().nextInt(9998) + 50000,
       chatTitle ?? 'Reminder: ${chat!.getTitle()}',
@@ -1096,6 +1097,7 @@ class NotificationsService extends GetxService {
   Future<void> scheduleRelayCheckReminder(DateTime time) async {
     // Relay registration can finish before startup notification tasks.
     await init();
+    await initializeLocalTimeZone();
     await cancelRelayCheckReminder();
 
     const title = "Check your iPhone relay";
