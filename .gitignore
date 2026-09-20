@@ -40,6 +40,7 @@ pubspeck.lock
 **/android/.settings
 **/releases
 /.local/signing/
+/.local/backups/
 
 #objectbox
 .dart_tool/*
