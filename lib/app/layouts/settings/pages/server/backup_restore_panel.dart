@@ -423,22 +423,23 @@ class _BackupRestorePanelState extends OptimizedState<BackupRestorePanel> {
                                 );
                               }
                             } else {
-                              String directoryPath = "/storage/emulated/0/Download/BB-Settings-";
-                              String filePath = "$directoryPath$name.json";
+                              final fileName = "BB-Settings-$name.json";
+                              String filePath = fileName;
                               if (kIsWeb) {
                                 final bytes = utf8.encode(jsonEncode(json));
                                 final content = base64.encode(bytes);
                                 html.AnchorElement(
                                     href: "data:application/octet-stream;charset=utf-16le;base64,$content")
-                                  ..setAttribute("download", basename(filePath))
+                                  ..setAttribute("download", fileName)
                                   ..click();
                                 return;
                               }
+                              filePath = join(fs.appDocDir.path, fileName);
                               if (kIsDesktop) {
                                 String? _filePath = await FilePicker.platform.saveFile(
                                   initialDirectory: (await getDownloadsDirectory())?.path,
                                   dialogTitle: 'Choose a location to save this file',
-                                  fileName: "BB-Settings-$name.json",
+                                  fileName: fileName,
                                   type: FileType.custom,
                                   allowedExtensions: ["json"],
                                 );
@@ -451,10 +452,13 @@ class _BackupRestorePanelState extends OptimizedState<BackupRestorePanel> {
                               await file.create(recursive: true);
                               String jsonString = jsonEncode(json);
                               await file.writeAsString(jsonString);
+                              if (!kIsDesktop) {
+                                await fs.saveToDownloads(file, mimeType: "application/json");
+                              }
                               showSnackbar(
                                 "Success",
-                                "Settings exported successfully to ${kIsDesktop ? filePath : "downloads folder"}",
-                                durationMs: kIsDesktop ? 4000 : 2000,
+                                kIsDesktop ? "Saved to $filePath" : "Saved settings backup to Downloads.",
+                                durationMs: 4000,
                                 button: TextButton(
                                   style: TextButton.styleFrom(
                                     backgroundColor: Get.theme.colorScheme.secondary,
@@ -1065,8 +1069,8 @@ class _BackupRestorePanelState extends OptimizedState<BackupRestorePanel> {
                             Get.back(closeOverlays: true);
                             showSnackbar(
                               "Success",
-                              "Message exported successfully to ${kIsDesktop ? filePath : "downloads folder"}",
-                              durationMs: kIsDesktop ? 4000 : 2000,
+                              kIsDesktop ? "Saved to $filePath" : "Saved chat backup to Downloads.",
+                              durationMs: 4000,
                               button: TextButton(
                                 style: TextButton.styleFrom(
                                   backgroundColor: Get.theme.colorScheme.secondary,

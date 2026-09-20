@@ -17,7 +17,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:path/path.dart';
 import 'package:universal_io/io.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:bluebubbles/src/rust/api/api.dart' as api;
@@ -50,9 +49,19 @@ class _TroubleshootPanelState extends OptimizedState<TroubleshootPanel> {
       await fs.saveToDownloads(file, mimeType: mimeType);
       showSnackbar(
         "Logs Saved",
-        "Saved ${basename(file.path)} to your Downloads folder.",
+        "Saved logs to Downloads.",
+        durationMs: 4000,
+        button: TextButton(
+          style: TextButton.styleFrom(
+            backgroundColor: Get.theme.colorScheme.secondary,
+          ),
+          onPressed: () => Share.file(subject, file.path),
+          child: Text(
+            "SHARE",
+            style: TextStyle(color: Get.theme.colorScheme.onSecondary),
+          ),
+        ),
       );
-      if (file.existsSync()) file.deleteSync();
     } catch (error, trace) {
       Logger.warn(
         "Could not save logs to Downloads; opening the share sheet",
