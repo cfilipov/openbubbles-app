@@ -10,17 +10,18 @@ an upstream change is imported, a fork-owned patch is added or removed, or the
 The application upstream uses the `rustpush` branch rather than `main` or
 `master`.
 
-| Component | Upstream | Maintained ref | Recorded state on 2026-09-05 |
+| Component | Upstream | Maintained ref | Recorded state on 2026-09-20 |
 | --- | --- | --- | --- |
-| Application | [`OpenBubbles/openbubbles-app`](https://github.com/OpenBubbles/openbubbles-app), branch `rustpush` | `cfilipov/test-pr231` | Upstream tip `eed1b6332`; PR 231 head `ae273e9e6`; last functional fork patch `90dcab0d7` |
+| Application | [`OpenBubbles/openbubbles-app`](https://github.com/OpenBubbles/openbubbles-app), branch `rustpush` | `cfilipov/test-pr231` | Upstream tip `eed1b6332`; PR 231 head `ae273e9e6`; fork tip before this ledger update `38364d1fb` |
 | RustPush | [`OpenBubbles/rustpush`](https://github.com/OpenBubbles/rustpush), branch `master` | [`cfilipov/rustpush`](https://github.com/cfilipov/rustpush), branch `cfilipov/findmy-location-lookup` | Upstream tip `f35c4ee0`; fork point `a7fab473`; fork tip `2491bd34` |
 | Telephony | [`OpenBubbles/telephony_plus`](https://github.com/OpenBubbles/telephony_plus), branch `main` | No fork changes | `5210e940` |
 
 The installed Android test app uses the Alpha application ID
 `com.bluebubbles.messaging.alpha` and the display name `OpenBubbles 𝛼`.
-Signing material is kept under `.local/signing/`, which is intentionally
-gitignored. Never add passwords, registration codes, Apple credentials, message
-logs, or signing files to this ledger.
+Signing material is kept under `.local/signing/`, and device backups are kept
+under `.local/backups/`; both are intentionally gitignored. Never add passwords,
+registration codes, Apple credentials, message logs, backups, or signing files
+to this ledger.
 
 ## Imported upstream work
 
@@ -57,6 +58,10 @@ These changes begin after the PR 231 head at `ae273e9e6`.
 | Android 16 KB page-size compatibility | `dfd9c9e45`, `ae64bb5e3`, `c8cba3e8a`, `96c81a90b`, `42674a9e0` | Applied | Rebuilds/alters native dependencies and Rust flags for 16 KB Android devices. |
 | Flutter 3.24 native drag compatibility | `26f64a120` | Applied | Restores the required native drag plugins after the dependency changes and fixes the resulting black startup screen. |
 | Local signing hygiene | `90dcab0d7` | Applied | Keeps the reusable Alpha signing configuration out of Git. |
+| Local device-backup hygiene | `0ca83f8a5` | Applied | Keeps APK, settings, and conversation backups under `.local/backups/` out of Git. |
+| Relay-reminder timezone initialization | `7cd0811b8` | Testing | Initializes timezone data before startup services and again at notification scheduling boundaries so relay reminders cannot race startup. |
+| Audio-message seek controls | `c5176bd02` | Testing | Replaces the unreliable mobile waveform with a stable slider and elapsed/total playback time. |
+| Android backup and log sharing | `38364d1fb` | Testing | Saves settings backups through MediaStore, restores one-tap log sharing, and shortens backup snackbars so their Share actions remain visible. |
 
 None of the fork-owned changes in this section has been proposed upstream.
 
@@ -86,14 +91,14 @@ application work.
 
 | Commit | State | Purpose |
 | --- | --- | --- |
-| `0936a83` | Testing | Parses the original IDS command and validates the MMCS descriptor carried by command 104. |
-| `2491bd3` | Testing | Downloads command-104 data without attachment decryption, restores the original command, and passes the result through normal message decryption and parsing. |
+| `0936a83` | Applied | Parses the original IDS command and validates the MMCS descriptor carried by command 104. |
+| `2491bd3` | Applied | Downloads command-104 data without attachment decryption, restores the original command, and passes the result through normal message decryption and parsing. |
 
 This is the receive path used by native iMessage audio messages. Malformed
 descriptors and failed downloads now return an error without falsely certifying
 delivery, preserving the opportunity for Apple to retry the payload. Synthetic
-parser tests pass; acceptance remains pending on a physical-device audio-message
-test.
+parser tests pass, and repeated native audio messages were received on the
+physical Android test device through 2026-09-20.
 
 ### Submodule publication
 
