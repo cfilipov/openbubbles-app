@@ -18,6 +18,7 @@ import 'package:bluebubbles/src/rust/api/api.dart' as api;
 import 'package:bluebubbles/src/rust/lib.dart' as lib;
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/services/rustpush/retryable_message.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/crypto_utils.dart';
 import 'package:bluebubbles/utils/logger/logger.dart';
@@ -441,9 +442,14 @@ class RustPushBackend implements BackendService {
     var stillRunning = false;
     var waited = Duration.zero;
     var sendTimeoutRetries = 0;
+    var sendAttempts = 0;
     try {
       while (true) {
         try {
+          if (sendAttempts > 0) {
+            await refreshLinkPreviewForRetry(msg);
+          }
+          sendAttempts++;
           stillRunning = await api.send(state: pushService.state!.client, local: pushService.state!.localBroadcast, msg: msg);
           break;
         } catch (e) {
