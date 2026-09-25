@@ -18,6 +18,7 @@ import 'package:bluebubbles/src/rust/api/api.dart' as api;
 import 'package:bluebubbles/src/rust/lib.dart' as lib;
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/database/models.dart';
+import 'package:bluebubbles/services/rustpush/retryable_attachment_upload.dart';
 import 'package:bluebubbles/services/rustpush/retryable_message.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:bluebubbles/utils/crypto_utils.dart';
@@ -572,24 +573,35 @@ class RustPushBackend implements BackendService {
     if (chat.isRpSms && !smsForwardingEnabled()) {
       throw Exception("SMS is not enabled (enable in settings -> user)");
     }
-    var stream = api.uploadAttachment(
-        aps: pushService.state!.conn,
-        path: att.getFile().path!,
-        mime: att.mimeType ?? "application/octet-stream",
-        uti: att.uti ?? "public.data",
-        name: att.transferName!);
-    api.Attachment? attachment;
-    await for (final event in stream) {
-      if (event.attachment != null) {
-        Logger.info("upload finish");
-        attachment = event.attachment;
-        att.metadata = {"rustpush": await api.saveAttachment(att: attachment!)};
-        att.save(m);
-      } else if (onSendProgress != null) {
-        Logger.info("upload progress ${event.prog} of ${event.total}");
-        onSendProgress(event.prog, event.total);
-      }
-    }
+    final attachment = await retryAttachmentUpload<api.Attachment>(
+      () async {
+        final stream = api.uploadAttachment(
+            aps: pushService.state!.conn,
+            path: att.getFile().path!,
+            mime: att.mimeType ?? "application/octet-stream",
+            uti: att.uti ?? "public.data",
+            name: att.transferName!);
+        api.Attachment? uploaded;
+        await for (final event in stream) {
+          if (event.attachment != null) {
+            Logger.info("upload finish");
+            uploaded = event.attachment;
+          } else if (onSendProgress != null) {
+            Logger.info("upload progress ${event.prog} of ${event.total}");
+            onSendProgress(event.prog, event.total);
+          }
+        }
+        if (uploaded == null) {
+          throw StateError("Attachment upload completed without a result");
+        }
+        return uploaded;
+      },
+      onRetry: (_, error) {
+        Logger.warn("Attachment upload timed out; retrying once after the push connection reload", error: error);
+      },
+    );
+    att.metadata = {"rustpush": await api.saveAttachment(att: attachment)};
+    att.save(m);
     Logger.info("uploaded");
     var msg = await api.newMsg(
         conversation: await chat.getConversationData(),
@@ -599,7 +611,7 @@ class RustPushBackend implements BackendService {
               field0: [
                 if (m.payloadData?.appData?.first.ldText != null)
                 api.IndexedMessagePart(part_: api.MessagePart.object(m.payloadData!.appData!.first.ldText!)),
-                api.IndexedMessagePart(part_: api.MessagePart.attachment(attachment!))
+                api.IndexedMessagePart(part_: api.MessagePart.attachment(attachment))
               ]),
           replyGuid: m.threadOriginatorGuid,
           replyPart: m.threadOriginatorGuid == null ? null : m.threadOriginatorPart,
