@@ -63,6 +63,10 @@ These changes begin after the PR 231 head at `ae273e9e6`.
 | Failure-only relay notifications | `5ebbb25f8` | Testing | Removes the unconditional pre-renewal relay reminder and clears reminders left by older builds. Actual registration failures and Apple logouts still notify. |
 | Audio-message seek controls | `c5176bd02` | Testing | Replaces the unreliable mobile waveform with a stable slider and elapsed/total playback time. |
 | Android backup and log sharing | `38364d1fb` | Testing | Saves settings backups through MediaStore, restores one-tap log sharing, and shortens backup snackbars so their Share actions remain visible. |
+| Rich-link send retries | `ed030368f` | Testing | Rebuilds move-only Rust rich-link metadata before retrying a send, avoiding disposed-wrapper failures after a confirmation timeout. |
+| Attachment upload timeout retry | `b09e21afd` | Testing | Retries one transient MMCS upload timeout with a fresh upload stream before surfacing a failed attachment message. |
+| Failed-message retry identity | `850dd1a68` | Testing | Gives manual retries fresh temporary message and attachment GUIDs so an old error bubble and its controller cannot be reused. |
+| Sent-attachment reconciliation | `6dc98022e` | Testing | Waits for the uploaded attachment to be reconciled under its attachment GUID before replacing and refreshing the delivered message. |
 
 None of the fork-owned changes in this section has been proposed upstream.
 
