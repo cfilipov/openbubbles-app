@@ -416,6 +416,8 @@ class ActionHandler extends GetxService {
   Future<void> sendAttachment(Chat c, Message m, bool isAudioMessage) async {
     if (m.attachments.isEmpty) return;
     final attachment = m.attachments.first!;
+    final pendingMessageGuid = m.guid!;
+    final pendingAttachmentGuid = attachment.guid!;
     final progress = attachmentProgress.firstWhere((e) => e.item1 == attachment.guid);
     final completer = Completer<void>();
     latestCancelToken = CancelToken();
@@ -428,22 +430,38 @@ class ActionHandler extends GetxService {
 
       for (Attachment? a in newMessage.attachments) {
         if (a == null) continue;
-
-        matchAttachmentWithExisting(c, m.guid!, a, existing: attachment)
-          .then((_) {
-            ms(c.guid).updateMessage(newMessage);
-          })
-          .catchError((e, stack) {
-            Logger.warn("Failed to replace attachment ${a.guid}!", error: e, tag: "AttachmentStatus");
-          }
-        );
+        try {
+          await matchAttachmentWithExisting(
+            c,
+            pendingAttachmentGuid,
+            a,
+            existing: attachment,
+          );
+        } catch (e, stack) {
+          Logger.warn(
+            "Failed to replace attachment ${a.guid}!",
+            error: e,
+            trace: stack,
+            tag: "AttachmentStatus",
+          );
+        }
       }
 
       try {
-        await matchMessageWithExisting(c, m.guid!, newMessage, existing: m);
+        await matchMessageWithExisting(
+          c,
+          pendingMessageGuid,
+          newMessage,
+          existing: m,
+        );
       } catch (e) {
-        Logger.warn("Failed to find message match for ${m.guid} -> ${newMessage.guid}!", error: e, tag: "MessageStatus");
+        Logger.warn(
+          "Failed to find message match for $pendingMessageGuid -> ${newMessage.guid}!",
+          error: e,
+          tag: "MessageStatus",
+        );
       }
+      ms(c.guid).updateMessage(newMessage, oldGuid: pendingMessageGuid);
       apnsSuccess = true;
       await m.forwardIfNessesary(c);
       attachmentProgress.removeWhere((e) => e.item1 == m.guid || e.item2 >= 1);
