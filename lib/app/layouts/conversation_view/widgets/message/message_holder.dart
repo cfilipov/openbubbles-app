@@ -798,14 +798,13 @@ class _MessageHolderState extends CustomState<MessageHolder, void, MessageWidget
                                   Message.delete(message.guid!);
                                   for (Attachment? a in message.attachments) {
                                     if (a == null) continue;
+                                    final bytes = await File(a.path).readAsBytes();
                                     Attachment.delete(a.guid!);
-                                    a.bytes = await File(a.path).readAsBytes();
+                                    a.bytes = bytes;
                                   }
                                   await notif.clearFailedToSend(chat.id!);
                                   // Re-send
-                                  message.id = null;
-                                  message.error = 0;
-                                  message.dateCreated = DateTime.now();
+                                  message.prepareForRetry();
                                   if (message.attachments.isNotEmpty) {
                                     outq.queue(OutgoingItem(
                                       type: QueueType.sendAttachment,

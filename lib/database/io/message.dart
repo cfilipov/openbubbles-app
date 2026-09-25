@@ -1417,6 +1417,24 @@ class Message {
     guid = "temp-${randomString(8)}";
   }
 
+  void prepareForRetry({String? tempGuid, DateTime? timestamp}) {
+    id = null;
+    error = 0;
+    dateCreated = timestamp ?? DateTime.now();
+    dateDelivered = null;
+    dateRead = null;
+    isDelivered = false;
+    sendingServiceId = null;
+
+    guid = tempGuid ?? "temp-${randomString(8)}";
+    for (final entry in attachments.indexed) {
+      final attachment = entry.$2;
+      if (attachment == null) continue;
+      attachment.id = null;
+      attachment.guid = entry.$1 == 0 ? guid : "$guid-${entry.$1}";
+    }
+  }
+
   /// Find how many messages exist in the DB for a chat
   static int? countForChat(Chat? chat) {
     if (kIsWeb || chat == null || chat.id == null) return 0;
