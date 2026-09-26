@@ -102,33 +102,44 @@ class ContactsService extends GetxService {
         h.formattedAddress = await formatPhoneNumber(h.address);
       }
     }
-    // match handles to contacts and save match
-    final handlesToSearch = List<Handle>.from(handles);
+    // Collect every match before choosing a contact. Android may expose both a
+    // visible address-book contact and hidden app-owned shadow contacts for the
+    // same address, and provider ordering is not a stable preference signal.
+    final contactMatches = <Handle, List<Contact>>{};
     for (Contact c in _contacts) {
-      final handles = matchContactToHandles(c, handlesToSearch);
-      final addressesAndServices = handles.map((e) => e.uniqueAddressAndService).toList();
-      if (handles.isNotEmpty) {
-        handlesToSearch.removeWhere((e) => addressesAndServices.contains(e.uniqueAddressAndService));
-
-        // we have changes if the handle doesn't have an associated contact,
-        // even if there were no contact changes in the first place
-        final matches = handles.where((e) => addressesAndServices.contains(e.uniqueAddressAndService));
-        for (Handle h in matches) {
-          if (kIsWeb) {
-            h.webContact = c;
-            continue;
-          }
-
-          if (h.contactRelation.target == null) {
-            changedIds.last.add(h.id!);
-          } else if (c.isShared) {
-            // we have an existing contact, and we're shared.
-            continue;
-          }
-
-          h.contactRelation.target = c;
-        }
+      for (final handle in matchContactToHandles(c, handles).toSet()) {
+        contactMatches.putIfAbsent(handle, () => <Contact>[]).add(c);
       }
+    }
+
+    for (final handle in handles) {
+      final candidates = contactMatches[handle];
+      if (candidates == null || candidates.isEmpty) continue;
+
+      final current = kIsWeb ? handle.webContact : handle.contactRelation.target;
+      final selected = selectPreferredContact(candidates, current: current);
+      if (selected == null) continue;
+
+      if (candidates.length > 1) {
+        Logger.debug("Resolved ${candidates.length} contact matches; selected contact ${selected.id}", tag: tag);
+      }
+
+      if (kIsWeb) {
+        handle.webContact = selected;
+        continue;
+      }
+
+      if (current != null && selected.isShared) {
+        // A shared name/photo suggestion must not replace an address-book
+        // contact that is already associated with this handle.
+        continue;
+      }
+
+      if (current?.id != selected.id && handle.id != null) {
+        changedIds.last.add(handle.id!);
+      }
+
+      handle.contactRelation.target = selected;
     }
     if (!kIsWeb) {
       Handle.bulkSave(handles, matchOnOriginalROWID: isMin1_5_2);
@@ -225,6 +236,7 @@ class ContactsService extends GetxService {
     List<Handle> handleMatches = [];
     // multiply phones by 3 because a phone can be matched to iMessage / SMS / Android SMS
     int maxResults = c.phones.length * 3 + c.emails.length;
+    handleLoop:
     for (Handle h in handles) {
       // Match emails
       if (h.address.contains("@") && c.emails.contains(h.address)) {
@@ -247,7 +259,7 @@ class ContactsService extends GetxService {
         final matchLengths = [15, 14, 13, 12, 11, 10, 9, 8, 7];
         if (matchLengths.contains(leadingZerosRemoved.length) && numericAddress.endsWith(leadingZerosRemoved)) {
           handleMatches.add(h);
-          continue;
+          continue handleLoop;
         }
       }
 

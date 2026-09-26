@@ -72,3 +72,50 @@ String getDisplayName(String? displayName, String? firstName, String? lastName) 
   String? _displayName = (displayName?.isEmpty ?? false) ? null : displayName;
   return _displayName ?? [firstName, lastName].where((e) => e?.isNotEmpty ?? false).toList().join(" ");
 }
+
+Contact? selectPreferredContact(Iterable<Contact> candidates, {Contact? current}) {
+  Contact? preferred;
+  for (final candidate in candidates) {
+    if (preferred == null || _compareContactPreference(candidate, preferred, current) < 0) {
+      preferred = candidate;
+    }
+  }
+  return preferred;
+}
+
+int _compareContactPreference(Contact first, Contact second, Contact? current) {
+  final avatarComparison = _comparePreferredBool(_hasAvatar(first), _hasAvatar(second));
+  if (avatarComparison != 0) return avatarComparison;
+
+  final richnessComparison = _contactRichness(second).compareTo(_contactRichness(first));
+  if (richnessComparison != 0) return richnessComparison;
+
+  final currentId = current?.id;
+  final currentComparison = _comparePreferredBool(first.id == currentId, second.id == currentId);
+  if (currentComparison != 0) return currentComparison;
+
+  return first.id.compareTo(second.id);
+}
+
+int _comparePreferredBool(bool first, bool second) => first == second ? 0 : (first ? -1 : 1);
+
+bool _hasAvatar(Contact contact) => contact.avatar?.isNotEmpty == true;
+
+int _contactRichness(Contact contact) {
+  final structuredName = contact.structuredName;
+  final populatedNameParts = structuredName == null
+      ? 0
+      : [
+          structuredName.namePrefix,
+          structuredName.givenName,
+          structuredName.middleName,
+          structuredName.familyName,
+          structuredName.nameSuffix,
+        ].where((part) => part.trim().isNotEmpty).length;
+  final addressCount = getUniqueNumbers(contact.phones).length + getUniqueEmails(contact.emails).length;
+
+  // Name data is a stronger indication of a real address-book entry than an
+  // app-created shadow contact. Address count breaks ties between otherwise
+  // equivalent records.
+  return populatedNameParts * 100 + addressCount;
+}
