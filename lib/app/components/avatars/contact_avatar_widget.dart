@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bluebubbles/helpers/helpers.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
+import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flex_color_picker/flex_color_picker.dart';
@@ -48,10 +49,30 @@ class _ContactAvatarWidgetState extends OptimizedState<ContactAvatarWidget> {
     _keyPrefix = widget.handle?.address ?? randomString(8);
     _avatarRefreshSubscription = eventDispatcher.stream.listen((event) {
       if (!mounted) return;
-      if (event.item1 != 'refresh-avatar') return;
-      if (event.item2[0] != widget.handle?.address) return;
-      widget.handle?.color = event.item2[1];
-      setState(() {});
+      if (event.item1 == 'refresh-avatar') {
+        if (event.item2[0] != widget.handle?.address) return;
+        widget.handle?.color = event.item2[1];
+        setState(() {});
+        return;
+      }
+
+      if (event.item1 != 'update-contacts' || event.item2 == null || event.item2.isEmpty) return;
+      final handle = widget.handle;
+      if (handle == null) return;
+
+      bool changed = false;
+      if (handle.id != null && event.item2.last.contains(handle.id)) {
+        final refreshedHandle = Database.handles.get(handle.id!);
+        if (refreshedHandle != null) {
+          handle.contactRelation.target = refreshedHandle.contactRelation.target;
+          changed = true;
+        }
+      } else if (event.item2.first.contains(handle.contactRelation.targetId)) {
+        handle.contactRelation.target = Database.contacts.get(handle.contactRelation.targetId);
+        changed = true;
+      }
+
+      if (changed) setState(() {});
     });
   }
 

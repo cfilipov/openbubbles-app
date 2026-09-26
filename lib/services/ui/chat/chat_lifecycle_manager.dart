@@ -38,7 +38,10 @@ class ChatLifecycleManager {
               h.contactRelation.target = contact;
             }
             if (event.item2.last.contains(h.id)) {
-              h = Database.handles.get(h.id!)!;
+              final refreshedHandle = Database.handles.get(h.id!);
+              if (refreshedHandle != null) {
+                h.contactRelation.target = refreshedHandle.contactRelation.target;
+              }
             }
           }
           chats.updateChat(chat, override: true);

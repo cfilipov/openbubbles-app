@@ -376,17 +376,18 @@ class _ChatTitleState extends CustomState<ChatTitle, void, ConversationTileContr
               h.contactRelation.target = Database.contacts.get(h.contactRelation.targetId);
             }
             if (event.item2.last.contains(h.id)) {
-              changed = true;
-              h = Database.handles.get(h.id!)!;
+              final refreshedHandle = Database.handles.get(h.id!);
+              if (refreshedHandle != null) {
+                changed = true;
+                h.contactRelation.target = refreshedHandle.contactRelation.target;
+              }
             }
           }
           if (changed) {
             final newTitle = controller.chat.getTitle();
-            if (newTitle != title) {
-              setState(() {
-                title = newTitle;
-              });
-            }
+            setState(() {
+              title = newTitle;
+            });
           }
         }
       });
