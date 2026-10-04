@@ -87,6 +87,25 @@ Apple credentials must not be committed.
 
 ## Change and review workflow
 
+### Contact regression tests
+
+The tests under `test/native/` use a real, temporary ObjectBox database. Install
+the ObjectBox C library matching the pinned Dart dependency before running them.
+For the current `objectbox: 4.1.0` dependency, download the platform archive from
+the [ObjectBox C 4.1.0 release](https://github.com/objectbox/objectbox-c/releases/tag/v4.1.0)
+and extract `lib/libobjectbox.dylib` on macOS or `lib/libobjectbox.so` on Linux
+into the checkout. These local libraries are gitignored.
+
+```bash
+flutter test --no-pub test/helpers/contact_helpers_test.dart \
+  test/services/contact_service_test.dart test/native/contact_refresh_test.dart
+```
+
+The native tests use synthetic contact data and delete their temporary database
+after completion. They do not read an installed application's database.
+
+### Review steps
+
 1. Start from a clean branch based on the intended upstream branch.
 2. Make one narrow change per branch where practical.
 3. Add or update a focused test for message parsing, routing, or state changes.

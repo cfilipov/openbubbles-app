@@ -67,8 +67,26 @@ These changes begin after the PR 231 head at `ae273e9e6`.
 | Attachment upload timeout retry | `b09e21afd` | Testing | Retries one transient MMCS upload timeout with a fresh upload stream before surfacing a failed attachment message. |
 | Failed-message retry identity | `850dd1a68` | Testing | Gives manual retries fresh temporary message and attachment GUIDs so an old error bubble and its controller cannot be reused. |
 | Sent-attachment reconciliation | `6dc98022e` | Testing | Waits for the uploaded attachment to be reconciled under its attachment GUID before replacing and refreshing the delivered message. |
+| Duplicate contact preference | `49f5f7faf` | Testing | Chooses the photo-bearing, richer contact record when Android exposes multiple records for the same sender. |
+| Live contact and avatar refresh | `ec8dae47f` | Testing | Updates existing handle objects and avatar widgets after a contact-refresh event. |
+| New-sender contact lookup and refresh completion | `2e8aa1794` | Testing | Applies the same normalized address matching and duplicate preference at handle creation as during refresh, updates the cached address book after direct refreshes, and publishes new contact IDs. Unchanged refreshes do not broadcast UI work. |
+| Conversation-list contact titles | `80105adbc` | Testing | Observes persisted chat, handle, and contact changes for ordinary and pinned list titles, including an immediate read for retained controllers. Native database regressions cover new contacts, missing UI events, name changes, and contact removal. |
 
 None of the fork-owned changes in this section has been proposed upstream.
+
+### Contact lookup regression verification
+
+On 2026-10-04, the focused contact suite passed all 14 tests. The native tests
+use a temporary ObjectBox store with synthetic contacts and cover a first
+message after a direct contact refresh, a known contact resolving an existing
+unknown thread, and a saved handle/contact change updating a title without a
+chat write or application refresh event. They also verify an unchanged refresh
+does not broadcast contact-update events. Analyzer output for the changed files
+contains only the existing mutable-widget and deprecated-color warnings.
+
+The follow-up fixes are prepared for the next signed Alpha update. Physical
+device verification of the new-thread report is pending; the Pixel was not
+connected over USB during this investigation.
 
 ## Fork-owned RustPush work
 
