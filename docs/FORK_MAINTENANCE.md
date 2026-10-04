@@ -84,9 +84,12 @@ chat write or application refresh event. They also verify an unchanged refresh
 does not broadcast contact-update events. Analyzer output for the changed files
 contains only the existing mutable-widget and deprecated-color warnings.
 
-The follow-up fixes are prepared for the next signed Alpha update. Physical
-device verification of the new-thread report is pending; the Pixel was not
-connected over USB during this investigation.
+The follow-up fixes were installed over the existing Alpha package on the
+Pixel 11 Pro on 2026-10-04 after verifying matching signing certificates. The
+reported thread now shows its saved contact name and avatar in the main list,
+existing conversations remain present, and startup completed without a logged
+runtime exception. A first message from a different previously unseen contact
+has not yet been retested on the physical device.
 
 ## Fork-owned RustPush work
 
