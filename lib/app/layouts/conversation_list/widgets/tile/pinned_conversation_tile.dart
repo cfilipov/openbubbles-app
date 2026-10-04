@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/typing/typing_indicator.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
+import 'package:bluebubbles/helpers/ui/chat_title_helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/dialogs/conversation_peek_view.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/conversation_list.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/tile/conversation_tile.dart';
@@ -10,7 +11,6 @@ import 'package:bluebubbles/app/layouts/conversation_list/widgets/tile/pinned_ti
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/reaction/reaction.dart';
 import 'package:bluebubbles/app/wrappers/stateful_boilerplate.dart';
 import 'package:bluebubbles/app/components/avatars/contact_avatar_group_widget.dart';
-import 'package:bluebubbles/database/database.dart';
 import 'package:bluebubbles/database/models.dart';
 import 'package:bluebubbles/services/services.dart';
 import 'package:flutter/cupertino.dart';
@@ -288,25 +288,12 @@ class _ChatTitleState extends CustomState<ChatTitle, void, ConversationTileContr
     // run query after render has completed
     if (!kIsWeb) {
       updateObx(() {
-        final titleQuery = Database.chats.query(Chat_.guid.equals(controller.chat.guid)).watch();
-        sub = titleQuery.listen((Query<Chat> query) async {
-          final chat = controller.chat.id == null
-              ? null
-              : await runAsync(() {
-                  return Database.chats.get(controller.chat.id!);
-                });
-          if (chat == null) return;
-          // check if we really need to update this widget
-          if (chat.displayName != cachedDisplayName || chat.handles.length != cachedParticipants.length) {
-            final newTitle = chat.getTitle();
-            if (newTitle != title) {
-              setState(() {
-                title = newTitle;
-              });
-            }
+        sub = watchChatTitle(controller.chat).listen((newTitle) {
+          if (newTitle != title) {
+            setState(() {
+              title = newTitle;
+            });
           }
-          cachedDisplayName = chat.displayName;
-          cachedParticipants = chat.handles;
         });
       });
     } else {

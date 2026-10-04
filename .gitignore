@@ -41,8 +41,11 @@ pubspeck.lock
 **/releases
 /.local/signing/
 /.local/backups/
+/.local/test-libs/
 
 #objectbox
+/lib/libobjectbox.dylib
+/lib/libobjectbox.so
 .dart_tool/*
 !.dart_tool/build
 .dart_tool/build/entrypoint

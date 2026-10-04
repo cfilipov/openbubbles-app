@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:bluebubbles/app/layouts/conversation_view/widgets/message/typing/typing_indicator.dart';
 import 'package:bluebubbles/helpers/helpers.dart';
+import 'package:bluebubbles/helpers/ui/chat_title_helpers.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/conversation_list.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/tile/cupertino_conversation_tile.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/widgets/tile/material_conversation_tile.dart';
@@ -326,7 +327,6 @@ class ChatTitle extends CustomStateful<ConversationTileController> {
 class _ChatTitleState extends CustomState<ChatTitle, void, ConversationTileController> {
   String title = "Unknown";
   StreamSubscription? sub;
-  StreamSubscription? eventSub;
   String? cachedDisplayName = "";
   List<Handle> cachedParticipants = [];
 
@@ -343,53 +343,13 @@ class _ChatTitleState extends CustomState<ChatTitle, void, ConversationTileContr
     // run query after render has completed
     if (!kIsWeb) {
       updateObx(() {
-        final titleQuery = Database.chats.query(Chat_.guid.equals(controller.chat.guid))
-            .watch();
-        sub = titleQuery.listen((Query<Chat> query) async {
-          final chat = controller.chat.id == null ? null : await runAsync(() {
-            return Database.chats.get(controller.chat.id!);
-          });
-          if (chat == null) return;
-          // check if we really need to update this widget
-          if (chat.displayName != cachedDisplayName
-              || chat.handles.length != cachedParticipants.length) {
-            final newTitle = chat.getTitle();
-            if (newTitle != title) {
-              setState(() {
-                title = newTitle;
-              });
-            }
-          }
-          cachedDisplayName = chat.displayName;
-          cachedParticipants = chat.handles;
-        });
-      });
-      // listen for contacts update (if tile is active, we can update it)
-      eventSub = eventDispatcher.stream.listen((event) {
-        if (!mounted) return;
-        if (event.item1 != 'update-contacts') return;
-        if (event.item2.isNotEmpty) {
-          bool changed = false;
-          for (Handle h in controller.chat.participants) {
-            if (event.item2.first.contains(h.contactRelation.targetId)) {
-              changed = true;
-              h.contactRelation.target = Database.contacts.get(h.contactRelation.targetId);
-            }
-            if (event.item2.last.contains(h.id)) {
-              final refreshedHandle = Database.handles.get(h.id!);
-              if (refreshedHandle != null) {
-                changed = true;
-                h.contactRelation.target = refreshedHandle.contactRelation.target;
-              }
-            }
-          }
-          if (changed) {
-            final newTitle = controller.chat.getTitle();
+        sub = watchChatTitle(controller.chat).listen((newTitle) {
+          if (newTitle != title) {
             setState(() {
               title = newTitle;
             });
           }
-        }
+        });
       });
     } else {
       sub = WebListeners.chatUpdate.listen((chat) {
@@ -414,7 +374,6 @@ class _ChatTitleState extends CustomState<ChatTitle, void, ConversationTileContr
   @override
   void dispose() {
     sub?.cancel();
-    eventSub?.cancel();
     super.dispose();
   }
 
