@@ -73,6 +73,25 @@ String getDisplayName(String? displayName, String? firstName, String? lastName) 
   return _displayName ?? [firstName, lastName].where((e) => e?.isNotEmpty ?? false).toList().join(" ");
 }
 
+bool contactMatchesAddress(Contact contact, String address) {
+  final normalizedAddress = address.trim();
+  if (normalizedAddress.contains('@')) {
+    return contact.emails.any((email) => email.trim().toLowerCase() == normalizedAddress.toLowerCase());
+  }
+
+  final numericAddress = normalizedAddress.numericOnly();
+  if (numericAddress.isEmpty) return false;
+  return contact.phones.any((phone) {
+    final numericPhone = phone.numericOnly();
+    if (numericPhone.isEmpty) return false;
+    if (numericAddress == numericPhone) return true;
+
+    // Local numbers may omit a country code or use leading trunk zeros.
+    final localPhone = numericPhone.replaceFirst(RegExp(r'^0+'), '');
+    return localPhone.length >= 7 && localPhone.length <= 15 && numericAddress.endsWith(localPhone);
+  });
+}
+
 Contact? selectPreferredContact(Iterable<Contact> candidates, {Contact? current}) {
   Contact? preferred;
   for (final candidate in candidates) {

@@ -84,6 +84,7 @@ class ContactsService extends GetxService {
       final newContacts = _contacts.where((e) => !dbContacts.map((e2) => e2.id).contains(e.id)).toList();
       if (newContacts.isNotEmpty) {
         final ids = Database.contacts.putMany(newContacts);
+        changedIds.first.addAll(ids);
         for (int i = 0; i < newContacts.length; i++) {
           newContacts[i].dbId = ids[i];
         }
@@ -156,6 +157,12 @@ class ContactsService extends GetxService {
     final endTime = DateTime.now().millisecondsSinceEpoch;
     Logger.debug("Contact refresh took ${endTime - startTime} ms");
 
+    // Direct refreshes (including RustPush startup) must update the same cache
+    // and UI as refreshes completed through the incremental-sync isolate.
+    if (!kIsWeb) {
+      completeContactsRefresh(Contact.getContacts(), reloadUI: changedIds);
+    }
+
     // only return contacts if things changed (or on web)
     return changedIds;
   }
@@ -225,78 +232,22 @@ class ContactsService extends GetxService {
   void completeContactsRefresh(List<Contact> refreshedContacts, {List<List<int>>? reloadUI}) {
     if (refreshedContacts.isNotEmpty) {
       contacts = refreshedContacts;
-      if (reloadUI != null) {
+      if (reloadUI != null && reloadUI.any((ids) => ids.isNotEmpty)) {
         eventDispatcher.emit('update-contacts', reloadUI);
       }
     }
   }
 
   List<Handle> matchContactToHandles(Contact c, List<Handle> handles) {
-    final numericPhones = c.phones.map((e) => e.numericOnly()).toList();
-    List<Handle> handleMatches = [];
-    // multiply phones by 3 because a phone can be matched to iMessage / SMS / Android SMS
-    int maxResults = c.phones.length * 3 + c.emails.length;
-    handleLoop:
-    for (Handle h in handles) {
-      // Match emails
-      if (h.address.contains("@") && c.emails.contains(h.address)) {
-        handleMatches.add(h);
-        continue;
-      }
-
-      final numericAddress = h.address.numericOnly();
-
-      // Match phone numbers (exact)
-      if (c.phones.contains(numericAddress)) {
-        handleMatches.add(h);
-        continue;
-      }
-
-      // try to match last 15 - 7 digits
-      for (String p in numericPhones) {
-        // remove leading zeros which indicate "same country"
-        final leadingZerosRemoved = int.tryParse(p)?.toString() ?? p;
-        final matchLengths = [15, 14, 13, 12, 11, 10, 9, 8, 7];
-        if (matchLengths.contains(leadingZerosRemoved.length) && numericAddress.endsWith(leadingZerosRemoved)) {
-          handleMatches.add(h);
-          continue handleLoop;
-        }
-      }
-
-      if (handleMatches.length >= maxResults) break;
-    }
-
-    return handleMatches;
+    return handles.where((handle) => contactMatchesAddress(c, handle.address)).toList();
   }
 
   Contact? matchHandleToContact(Handle h) {
     if (!_hasContactAccess) return null;
-
-    Contact? contact;
-    final numericAddress = h.address.numericOnly();
-    for (Contact c in contacts) {
-      final numericPhones = c.phones.map((e) => e.numericOnly()).toList();
-      if (h.address.contains("@") && c.emails.contains(h.address)) {
-        contact = c;
-        break;
-      } else {
-        // if address is direct match
-        if (c.phones.contains(numericAddress)) {
-          contact = c;
-          break;
-        }
-        // try to match last 11 - 7 digits
-        for (String p in numericPhones) {
-          final matchLengths = [15, 14, 13, 12, 11, 10, 9, 8, 7];
-          if (matchLengths.contains(p.length) && numericAddress.endsWith(p)) {
-            contact = c;
-            break;
-          }
-        }
-        if (contact != null) break;
-      }
-    }
-    return contact;
+    return selectPreferredContact(
+      contacts.where((contact) => contactMatchesAddress(contact, h.address)),
+      current: h.contact,
+    );
   }
 
   Contact? getContact(String address) {
