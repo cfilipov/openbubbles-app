@@ -9,6 +9,7 @@ import 'package:bluebubbles/app/layouts/findmy/findmy_battery.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_entity_icon.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_location_clipper.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_pin_clipper.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_refresh_gate.dart';
 import 'package:bluebubbles/app/layouts/settings/widgets/content/next_button.dart';
 import 'package:bluebubbles/app/wrappers/scrollbar_wrapper.dart';
 import 'package:bluebubbles/app/wrappers/theme_switcher.dart';
@@ -46,7 +47,7 @@ class FindMyPage extends StatefulWidget {
   State<StatefulWidget> createState() => _FindMyPageState();
 }
 
-class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProviderStateMixin {
+class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final ScrollController devicesScrollController = ScrollController();
   final ScrollController itemsScrollController = ScrollController();
   final ScrollController friendsScrollController = ScrollController();
@@ -66,7 +67,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   bool refreshing = false;
   bool? fetching2 = true;
   bool refreshing2 = false;
-  bool locationRefreshInFlight = false;
+  final locationRefresh = FindMyRefreshGate();
   bool canRefresh = false;
   bool isInClique = true;
 
@@ -194,6 +195,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     tabController.addListener(_syncSelectedTab);
     if (widget.defaultFriend != null) {
       index.value = 2; // select friends tab
@@ -201,7 +203,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
     }
     getLocations();
 
-    myTimer = Timer.periodic(const Duration(seconds: 5), (timer) => getLocations());
+    _startRefreshTimer();
 
     socket.socket.on("new-findmy-location", (data) {
       try {
@@ -240,25 +242,61 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
     }
   }
 
+  void _startRefreshTimer() {
+    myTimer?.cancel();
+    myTimer = Timer.periodic(const Duration(seconds: 5), (timer) => getLocations());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startRefreshTimer();
+      getLocations();
+    } else {
+      myTimer?.cancel();
+    }
+  }
+
   /// Fetches the FindMy data from the server.
   /// The toggles for refresh friends & devices are separate due to an inconsistency in the server API.
   /// As of v1.9.7 (server), the refresh devices endpoint doesn't return the devices data,
   /// however, the refresh friends endpoint does. The way this was coded assumes that the server
   /// will return the data for both endpoints. A server update will fix this, but for now,
   /// we will "patch" it by only "refreshing" devices when the user manually refreshes the data.
-  void getLocations({bool refreshFriends = true, bool refreshDevices = true}) {
-    if (locationRefreshInFlight) return;
-    locationRefreshInFlight = true;
+  void getLocations({bool refreshFriends = true, bool refreshDevices = true, bool manual = false}) {
+    if (!mounted || !locationRefresh.begin(manual: manual)) return;
+    if (manual) {
+      setState(() {
+        refreshing = true;
+        refreshing2 = true;
+      });
+    }
     unawaited(() async {
+      var succeeded = false;
       try {
         await _getLocations(
           refreshFriends: refreshFriends,
           refreshDevices: refreshDevices,
         );
+        succeeded = true;
       } catch (error, trace) {
         Logger.error("Failed to refresh FindMy data", error: error, trace: trace);
+        if (mounted) {
+          setState(() {
+            // Client creation can fail before either inner request handler.
+            // End every pending initial spinner, without discarding old data.
+            if (fetching == true) fetching = null;
+            if (fetching2 == true) fetching2 = null;
+          });
+        }
       } finally {
-        locationRefreshInFlight = false;
+        locationRefresh.complete(succeeded: succeeded);
+        if (mounted) {
+          setState(() {
+            refreshing = false;
+            refreshing2 = false;
+          });
+        }
       }
     }());
   }
@@ -296,21 +334,22 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
       }
     }
 
-    var isNew = fmfClient == null;
-    fmfClient ??= await api.makeFindMyFriends(
-      path: pushService.statePath,
-      config: pushService.state!.osConfig,
-      aps: pushService.state!.conn,
-      anisette: pushService.state!.anisette,
-      provider: pushService.state!.icloudServices!.tokenProvider,
-    );
-
     try {
+      var isNew = fmfClient == null;
+      fmfClient ??= await api.makeFindMyFriends(
+        path: pushService.statePath,
+        config: pushService.state!.osConfig,
+        aps: pushService.state!.conn,
+        anisette: pushService.state!.anisette,
+        provider: pushService.state!.icloudServices!.tokenProvider,
+      );
+
       if (refreshFriends && !isNew) {
         await api.refreshFollowing(config: pushService.state!.osConfig, client: fmfClient!);
       }
 
       var following = await api.getFollowing(client: fmfClient!);
+      if (!mounted) return;
     
       final updatedFriends = following
           .map((e) => 
@@ -365,24 +404,26 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
       }
     } catch (e, s) {
       Logger.error("Failed to parse FindMy Friends location data!", error: e, trace: s);
-      setState(() {
-        fetching2 = null;
-        refreshing2 = false;
-      });
-      return;
+      if (mounted) {
+        setState(() {
+          fetching2 = null;
+          refreshing2 = false;
+        });
+      }
+      rethrow;
     }
 
-    var isNewi = fmipClient == null;
-    fmipClient ??= await api.makeFindMyPhone(
-      config: pushService.state!.osConfig,
-      path: pushService.statePath,
-      aps: pushService.state!.conn,
-      anisette: pushService.state!.anisette,
-      provider: pushService.state!.icloudServices!.tokenProvider,
-    );
-
-
     try {
+      var isNewi = fmipClient == null;
+      fmipClient ??= await api.makeFindMyPhone(
+        config: pushService.state!.osConfig,
+        path: pushService.statePath,
+        aps: pushService.state!.conn,
+        anisette: pushService.state!.anisette,
+        provider: pushService.state!.icloudServices!.tokenProvider,
+      );
+
+
       if (refreshDevices && !isNewi) {
         await api.refreshDevices(config: pushService.state!.osConfig, client: fmipClient!);
       }
@@ -617,17 +658,20 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
             alignment: Alignment.topCenter,
           );
         }
+      if (!mounted) return;
       setState(() {
         fetching = false;
         refreshing = false;
       });
     } catch (e, s) {
       Logger.error("Failed to parse FindMy Devices location data!", error: e, trace: s);
-      setState(() {
-        fetching = null;
-        refreshing = false;
-      });
-      return;
+      if (mounted) {
+        setState(() {
+          fetching = null;
+          refreshing = false;
+        });
+      }
+      rethrow;
     }
     
 
@@ -737,6 +781,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     locationSub?.cancel();
     devicesScrollController.dispose();
     itemsScrollController.dispose();
@@ -770,7 +815,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       padding: const EdgeInsets.all(8.0),
                       child: Text(
                         fetching == null
-                            ? "Something went wrong!"
+                            ? "Couldn't load Find My. Retrying automatically."
                             : fetching == false
                                 ? "You have no devices."
                                 : "Getting FindMy data...",
@@ -778,6 +823,8 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       ),
                     ),
                     if (fetching == true) buildProgressIndicator(context, size: 15),
+                    if (fetching == null)
+                      TextButton(onPressed: locationRefresh.inFlight ? null : () => getLocations(manual: true), child: const Text('Retry now')),
                   ],
                 ),
               ),
@@ -896,7 +943,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       padding: const EdgeInsets.all(8.0),
                       child: Text(
                         fetching == null
-                            ? "Something went wrong!"
+                            ? "Couldn't load Find My. Retrying automatically."
                             : fetching == false
                                 ? "You have no items."
                                 : "Getting FindMy data...",
@@ -904,6 +951,8 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       ),
                     ),
                     if (fetching == true) buildProgressIndicator(context, size: 15),
+                    if (fetching == null)
+                      TextButton(onPressed: locationRefresh.inFlight ? null : () => getLocations(manual: true), child: const Text('Retry now')),
                   ],
                 ),
               ),
@@ -1064,7 +1113,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       padding: const EdgeInsets.all(8.0),
                       child: Text(
                         fetching2 == null
-                            ? "Something went wrong!"
+                            ? "Couldn't load Find My. Retrying automatically."
                             : fetching2 == false
                                 ? "You have no friends."
                                 : "Getting FindMy data...",
@@ -1072,6 +1121,8 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       ),
                     ),
                     if (fetching2 == true) buildProgressIndicator(context, size: 15),
+                    if (fetching2 == null)
+                      TextButton(onPressed: locationRefresh.inFlight ? null : () => getLocations(manual: true), child: const Text('Retry now')),
                   ],
                 ),
               ),
@@ -1251,11 +1302,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                                       icon: Icon(iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
                                           color: context.theme.colorScheme.onBackground, size: 22),
                                       onPressed: () {
-                                        setState(() {
-                                          refreshing = true;
-                                          refreshing2 = true;
-                                        });
-                                        getLocations();
+                                        getLocations(manual: true);
                                       },
                                     ),
                             ),
@@ -1702,11 +1749,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                             icon: Icon(iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
                                 color: context.theme.colorScheme.onBackground, size: 22),
                             onPressed: () {
-                              setState(() {
-                                refreshing = true;
-                                refreshing2 = true;
-                              });
-                              getLocations(refreshDevices: true);
+                              getLocations(refreshDevices: true, manual: true);
                             },
                           ),
                   ),
@@ -1784,11 +1827,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                     icon: Icon(iOS ? CupertinoIcons.arrow_counterclockwise : Icons.refresh,
                         color: context.theme.colorScheme.onBackground, size: 22),
                     onPressed: () {
-                      setState(() {
-                        refreshing = true;
-                        refreshing2 = true;
-                      });
-                      getLocations(refreshDevices: true);
+                      getLocations(refreshDevices: true, manual: true);
                     },
                   ),
           ),
