@@ -71,6 +71,10 @@ These changes begin after the PR 231 head at `ae273e9e6`.
 | Live contact and avatar refresh | `ec8dae47f` | Testing | Updates existing handle objects and avatar widgets after a contact-refresh event. |
 | New-sender contact lookup and refresh completion | `2e8aa1794` | Testing | Applies the same normalized address matching and duplicate preference at handle creation as during refresh, updates the cached address book after direct refreshes, and publishes new contact IDs. Unchanged refreshes do not broadcast UI work. |
 | Conversation-list contact titles | `80105adbc` | Testing | Observes persisted chat, handle, and contact changes for ordinary and pinned list titles, including an immediate read for retained controllers. Native database regressions cover new contacts, missing UI events, name changes, and contact removal. |
+| Find My failure states and bounded retries | `3043d47de` | Testing | Ends initial loading on client-creation failures, retains cached lists, adds manual retry, backs off failed refreshes from 30 seconds to five minutes, and stops polling outside the foreground. |
+| Saved map position serialization | `467cdb2ec` | Testing | Serializes the nullable string value rather than its reactive wrapper, fixing settings exports after Find My use. |
+| Stable Maps navigation | `c6c8bb86e` | Testing | Keeps the map menu available for direct connections even when the optional item daemon is not ready. Friends/devices do not require that daemon; server-backed and live-sharing capability checks remain unchanged. |
+| Apple authentication transport and compatibility | `c96a5b572`, `fc220dddd` | Testing | Advances RustPush and its forked Apple-private-APIs dependency for safe HTTP errors, fresh GrandSlam connections, and consistent remote-anisette authentication identities. |
 
 None of the fork-owned changes in this section has been proposed upstream.
 
@@ -93,7 +97,8 @@ has not yet been retested on the physical device.
 
 ## Fork-owned RustPush work
 
-The application currently records RustPush commit `2491bd34`.
+The application currently records RustPush commit `f2f169b`. The previously
+installed October 4 baseline recorded `2491bd34`.
 
 ### Changes imported with PR 231
 
@@ -105,6 +110,103 @@ the following local range:
 That range contains the resilient provisioning/anisette changes, public
 submodule URL cleanup, and safer IDS alias error handling needed by the imported
 application work.
+
+### Find My authentication refresh compatibility
+
+| Repository / commit | Purpose |
+| --- | --- |
+| Apple-private-APIs `407e6d2` | Checks GrandSlam HTTP status and rejects invalid response envelopes without logging their contents. |
+| Apple-private-APIs `b84a25e` | Uses bounded, fresh HTTP/1 connections for GrandSlam, while sharing cookies and preserving normal connection pooling elsewhere. |
+| Apple-private-APIs `4206902` | Applies a compatible authentication client profile only to remote-v3 anisette; local providers and provisioning retain their original identities. |
+| RustPush `df3e94e` | Pins the authentication transport changes and points the nested submodule at the maintained fork. |
+| RustPush `f2f169b` | Keeps PET-backed delegate and escrow request identities consistent with the anisette provider. CloudKit and account-settings request identities are unchanged. |
+
+The nested dependency is now published to
+[`cfilipov/apple-private-apis`](https://github.com/cfilipov/apple-private-apis),
+branch `cfilipov/findmy-auth-refresh`, and RustPush's `.gitmodules` points there.
+It retains the previous dependency baseline; the unrelated upstream account
+persistence rewrite has not been imported.
+
+The October 25 log dumps showed repeated `Token missing` failures while
+constructing the Friends client, before Devices/Items were attempted. Live
+native diagnostics on October 27 showed HTML where a plist was expected. The
+first signed in-place update (`20002228`) retained the existing installation and
+exposed Apple's more specific `-80045` rejection. Thus fresh connections alone
+were not sufficient. The follow-up build (`20002229`) includes the remote-v3
+compatibility profile and stable menu entry, but still needs physical-device
+authentication and all-three-tabs verification; the phone was disconnected
+before this build was ready. Do not describe the compatibility workaround as a
+verified field fix yet.
+
+Local verification: 20 focused Flutter tests pass, including settings JSON
+round trips, refresh backoff, navigation policy, item batteries and icons.
+Eight Apple-private-APIs tests pass with remote-v3 enabled; the real-device
+`test_adi` is deliberately excluded. They cover safe parser failures, fresh
+connections/cookies, provider-scoped authentication identity, and the existing
+provisioning parser. Analyzer output has only existing warnings/deprecations.
+
+The same APK can start failing after working previously because it depends on
+Apple's live authentication service. Cached GSA tokens have server-provided
+expirations, MobileMe tokens refresh weekly, and restored accounts must obtain
+fresh tokens. October reports describe a new server-side rejection of the
+remote provider's Android-derived anisette under Mac/iOS authentication
+identities. The exact first failing token-expiry event was not captured.
+
+References: [anisette-v3-server issue 61](https://github.com/Dadoum/anisette-v3-server/issues/61),
+[xtool connection handling](https://github.com/xtool-org/xtool/pull/247).
+The Windows-profile change is a compatibility workaround, not removal of the
+public anisette dependency or a guarantee against future Apple changes.
+
+### Removing the public anisette dependency: investigation only
+
+Android builds currently select `RemoteAnisetteProviderV3` and the upstream
+default `https://ani.sidestore.io`. The inspected requests send a generated
+identifier and opaque ADI provisioning material, not the account username,
+password, SRP login proof or account-login tokens. The service still sees the
+provisioning exchanges, can generate the corresponding device-authentication
+headers, and sees the connecting IP address. This is a trust dependency even
+though account authentication goes directly to Apple. No new service has been
+introduced by these patches.
+
+The existing iPhone validation relay supplies NAC validation data and device
+version information, not anisette headers. These are distinct roles.
+
+Potential replacements, not implemented or configured:
+
+- **Native iPhone generation:** investigate AuthKit on the existing jailbroken
+  relay phone. ReProvision demonstrates `AKAppleIDSession` header generation;
+  public runtime headers also expose `AKAnisetteProvisioningController`.
+  Those references establish a plausible API path, not compatibility with this
+  particular iOS build. Probe selector availability, entitlements, and required
+  header presence without logging values or erasing/reprovisioning anything.
+  ReProvision declares `com.apple.authkit.client.private`; the current relay
+  does not. Keep its existing TrollStore container entitlement and relay ID.
+- **Native Mac generation:** the dependency already implements local AOSKit
+  generation on macOS. A user-owned, authenticated endpoint could remove the
+  public anisette service but would require a reachable Mac.
+- **Self-hosted v3:** removes the public operator, but not the Android CoreADI
+  compatibility issue. It is not equivalent to native Apple-device generation.
+- **On-device Android generation:** the loader dependency alone is not a
+  working local provider. The alternative ClearADI implementation in this
+  checkout contains `todo!()` stubs and cannot safely replace remote-v3 merely
+  by changing a feature flag.
+
+Transport is part of the security design: forwarding native anisette headers
+through a public TLS-terminating relay without end-to-end encryption would
+shift the trust dependency rather than eliminate it. Prefer an authenticated
+private connection or an explicitly paired, end-to-end encrypted protocol.
+Fetch on demand, cache only within the valid lifetime, bound retries, and do not
+silently fall back to a public provider after a private endpoint fails.
+
+Before changing providers, test GSA/PET renewal, MobileMe token availability
+(including `searchPartyToken`), escrow/keychain access, all Find My tabs, and
+iMessage registration continuity. Do not wipe app data or change the relay ID.
+Account reauthentication may be necessary when changing device-authentication
+identity; it has not been proven avoidable. No relay changes, new endpoint,
+provider migration, or credential changes have been made for this investigation.
+
+References: [ReProvision login implementation](https://github.com/Matchstic/ReProvision/blob/master/Shared/libProvision/Apple%20Services/RPVLoginImpl.m),
+[AuthKit controller runtime header](https://github.com/nst/iOS-Runtime-Headers/blob/master/PrivateFrameworks/AuthKit.framework/AKAnisetteProvisioningController.h).
 
 ### Find My changes added in this fork
 
@@ -131,7 +233,7 @@ physical Android test device through 2026-09-20.
 The RustPush divergence is published to
 [`cfilipov/rustpush`](https://github.com/cfilipov/rustpush) on branch
 `cfilipov/findmy-location-lookup`. The application `.gitmodules` entry points to
-that fork, so a recursive clone can resolve the recorded commit `2491bd34`.
+that fork, so a recursive clone can resolve the recorded commit `f2f169b`.
 
 In the maintained checkout, use `origin` for `cfilipov/rustpush` and `upstream`
 for `OpenBubbles/rustpush`. Fetch both before integrating new upstream work.
