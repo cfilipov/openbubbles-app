@@ -70,6 +70,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
   final locationRefresh = FindMyRefreshGate();
   bool canRefresh = false;
   bool isInClique = true;
+  bool itemServiceUnavailable = false;
 
   Map<(double, double), Address> cachedAddresses = {};
 
@@ -499,14 +500,20 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
       
 
       if (beaconCacheDate == null || DateTime.now().difference(beaconCacheDate!).inMinutes > 3) {
-        isInClique = await api.isInClique(keychain: pushService.state!.icloudServices!.keychain!);
+        final services = pushService.state!.icloudServices!;
+        itemServiceUnavailable = services.keychain == null || services.fmfd == null;
+        if (!itemServiceUnavailable) {
+          isInClique = await api.isInClique(keychain: services.keychain!);
+        }
         try {
-          cachedBeacons = isInClique ? await api.getBeaconItems(items: pushService.state!.icloudServices!.fmfd!) : [];
+          if (!itemServiceUnavailable) {
+            cachedBeacons = isInClique ? await api.getBeaconItems(items: services.fmfd!) : [];
+          }
         } catch (e, s) {
           // used for PCS key missing catching after we reset the clique.
           Logger.error("Failed to fetch beacon data", error: e, trace: s);
         }
-        beaconCacheDate = DateTime.now();
+        beaconCacheDate = itemServiceUnavailable ? null : DateTime.now();
         for (var cached in cachedBeacons) {
           if (cached.lastReport == null) continue;
           try {
@@ -933,6 +940,7 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
         delegate: SliverChildListDelegate([
           if (fetching == null ||
               fetching == true ||
+              itemServiceUnavailable ||
               (fetching == false && itemEntries.isEmpty && isInClique))
             Center(
               child: Padding(
@@ -944,6 +952,8 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       child: Text(
                         fetching == null
                             ? "Couldn't load Find My. Retrying automatically."
+                            : itemServiceUnavailable
+                                ? "The item service is unavailable. Friends and devices can still load."
                             : fetching == false
                                 ? "You have no items."
                                 : "Getting FindMy data...",
@@ -951,15 +961,15 @@ class _FindMyPageState extends OptimizedState<FindMyPage> with SingleTickerProvi
                       ),
                     ),
                     if (fetching == true) buildProgressIndicator(context, size: 15),
-                    if (fetching == null)
+                    if (fetching == null || itemServiceUnavailable)
                       TextButton(onPressed: locationRefresh.inFlight ? null : () => getLocations(manual: true), child: const Text('Retry now')),
                   ],
                 ),
               ),
             ),
-          if (itemEntries.isNotEmpty || !isInClique)
+          if (itemEntries.isNotEmpty || (!isInClique && !itemServiceUnavailable))
             SettingsHeader(iosSubtitle: iosSubtitle, materialSubtitle: materialSubtitle, text: "Items"),
-          if (!isInClique)
+          if (!isInClique && !itemServiceUnavailable)
           Obx(() => SettingsSection(
             backgroundColor: tileColor,
             children: [

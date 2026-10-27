@@ -3,6 +3,7 @@ import 'package:bluebubbles/app/components/avatars/contact_avatar_widget.dart';
 import 'package:bluebubbles/app/layouts/conversation_list/pages/search/search_view.dart';
 import 'package:bluebubbles/app/layouts/conversation_view/pages/conversation_view.dart';
 import 'package:bluebubbles/app/layouts/findmy/findmy_page.dart';
+import 'package:bluebubbles/app/layouts/findmy/findmy_availability.dart';
 import 'package:bluebubbles/app/layouts/facetime/facetime.dart';
 import 'package:bluebubbles/app/layouts/settings/pages/misc/shared_streams_panel.dart';
 import 'package:bluebubbles/app/layouts/settings/pages/passwords/passwords_panel.dart';
@@ -165,7 +166,7 @@ class MaterialOverflowMenu extends StatelessWidget {
                 style: context.textTheme.bodyLarge!.apply(color: context.theme.colorScheme.properOnSurface),
               ),
             ),
-          if (backend.supportsFindMy())
+          if (canOpenFindMy(directConnection: backend is RustPushBackend, serverSupportsFindMy: backend.supportsFindMy()))
             PopupMenuItem(
               value: 5,
               child: Text(
@@ -317,7 +318,7 @@ class CupertinoOverflowMenu extends StatelessWidget {
             icon: CupertinoIcons.person_crop_circle_badge_xmark,
             onTap: () => goToUnknownSenders(context),
           ),
-        if (backend.supportsFindMy())
+        if (canOpenFindMy(directConnection: backend is RustPushBackend, serverSupportsFindMy: backend.supportsFindMy()))
           PullDownMenuItem(
             title: 'Map',
             icon: CupertinoIcons.location,
