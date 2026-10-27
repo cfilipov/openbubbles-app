@@ -435,7 +435,7 @@ class Settings {
       'vpnWarned': vpnWarned.value,
       'smsForwardingTargets': smsRoutingTargets,
       'developerMode': developerMode,
-      'lastLocation': lastLocation,
+      'lastLocation': lastLocation.value,
       'enableShareZen': enableShareZen.value,
       'warnedTextChats': warnedTextChats.value,
       'nonIMessageWarning': nonIMessageWarning.value,
